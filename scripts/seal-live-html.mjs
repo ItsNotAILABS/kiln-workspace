@@ -52,8 +52,8 @@ const PAGES = [
 ];
 
 const html = fs.readFileSync(src, "utf8");
-if (!html.includes("kiln-boot.js")) {
-  console.error("seal-live-html: public/index.html must load kiln-boot.js");
+if (!html.includes("kiln-boot.js") && !html.includes("kiln-client.js")) {
+  console.error("seal-live-html: public/index.html must load kiln-boot.js or kiln-client.js");
   process.exit(1);
 }
 

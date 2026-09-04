@@ -43,9 +43,9 @@
     },
     {
       "path": "public/index.html",
-      "sha256": "de3ba0e950e7102a2244978b2b80ed331990ca1009deec3044957f8f47560747",
-      "size": 1028,
-      "reason": "Original entry index-kiln-client.js (client render, no SSR hydrate)"
+      "sha256": "42eb5526701bc9fdfc2e27c8d54696b7df1df7eae1bc21d49ce035e1766a420b",
+      "size": 1055,
+      "reason": "SPA entry: #app + kiln-client (no document hydrate)"
     },
     {
       "path": "scripts/agent-turn.mjs",
@@ -70,6 +70,24 @@
       "sha256": "bd415f9e0fc230ddf7105b8ff18e6e52271e7a5f39d01ccf3fb603b468896758",
       "size": 397,
       "reason": "Boot runs restore before serve"
+    },
+    {
+      "path": "public/assets/kiln-client.js",
+      "sha256": "77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964",
+      "size": 331890,
+      "reason": "Client boot: skip mn, mount #app, createRoot"
+    },
+    {
+      "path": "public/assets/kiln-boot.js",
+      "sha256": "77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964",
+      "size": 331890,
+      "reason": "Same patched boot (legacy URL)"
+    },
+    {
+      "path": "public/assets/index-kiln-client.js",
+      "sha256": "77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964",
+      "size": 331890,
+      "reason": "Same patched boot (legacy URL)"
     }
   ]
 }
