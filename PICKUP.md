@@ -50,4 +50,4 @@ Dev server: `0.0.0.0:8080`. Do not steal `pocket.medinatechlabs.net`.
 - `E:\KILN\recovery-before-codex-20260903-094935\` (gitignored)
 - `E:\KILN\recovered\` pretty-printed blobs (gitignored)
 
-Pocket seed: `src/lib/kiln/seed.ts` → `itsnotailabs/pocket` (Spark desk agent + side-by-side panes), `itsnotailabs/pocket-mailbox`, `itsnotailabs/kiln-workspace`.
+Pocket seed: `src/lib/kiln/seed.ts` → `itsnotailabs/pocket` (Desktop/Edge `/desk` auto-splits two agents; Spark + Crew stay in-window), `itsnotailabs/pocket-mailbox`, `itsnotailabs/kiln-workspace`.
