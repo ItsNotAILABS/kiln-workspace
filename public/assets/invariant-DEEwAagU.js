@@ -1,0 +1,1 @@
+export function t(cond, msg){if(!cond)throw Error(msg||"invariant")}

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# git-remote-kiln — helper so `git clone kiln://owner/repo.git` works.
+# Install:  sudo cp git-remote-kiln "$(git --exec-path)/git-remote-kiln" && sudo chmod +x "$(git --exec-path)/git-remote-kiln"
+set -euo pipefail
+url="${2:-${1:-}}"
+url="${url#kiln://}"
+url="${url%.git}"
+owner="${url%%/*}"
+repo="${url#*/}"
+repo="${repo%%/*}"
+origin="${KILN_ORIGIN:-https://kiln-git.grok.me}"
+exec git clone "${origin}/${owner}/${repo}.git" "$@"

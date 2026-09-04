@@ -1,0 +1,1 @@
+const t=Object.freeze({id:"kiln-mw",middleware:[]});export{t};

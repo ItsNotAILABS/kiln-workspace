@@ -1,0 +1,1 @@
+export { component } from "./chain-BeGhQWqf.js";

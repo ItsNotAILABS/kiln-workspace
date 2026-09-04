@@ -1,0 +1,1 @@
+export { component } from "./new-DrGYWjdX.js";

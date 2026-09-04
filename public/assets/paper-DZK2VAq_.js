@@ -1,0 +1,1 @@
+export { component } from "./papers-DKQH21Qh.js";

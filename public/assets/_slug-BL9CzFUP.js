@@ -1,0 +1,1 @@
+export { component } from "./paper-DZK2VAq_.js";

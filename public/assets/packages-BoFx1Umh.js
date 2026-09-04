@@ -1,0 +1,1 @@
+export { component } from "./packages-CXc1_BwV.js";

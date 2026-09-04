@@ -1,0 +1,1 @@
+export { component } from "./_repo-DtOO023L.js";

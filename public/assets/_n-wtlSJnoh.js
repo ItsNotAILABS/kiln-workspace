@@ -1,0 +1,1 @@
+export { component } from "./issues-B3-jCySW.js";

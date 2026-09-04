@@ -1,0 +1,1 @@
+export { component } from "./invite-B5bqB7yU.js";

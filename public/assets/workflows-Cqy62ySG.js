@@ -1,0 +1,1 @@
+export { component } from "./actions-C6yYfvUI.js";
