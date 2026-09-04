@@ -635,7 +635,7 @@ export const SEED_REPOS: Repo[] = [
     githubOwner: "ItsNotAILABS",
     githubRepo: "pocket",
     files: [
-      file("README.md", "Markdown", `# POCKET\n\nNative Agent OS on the machine you own. PhoneAI is the public seat (signup + Face ID). MCP servers are phone apps. Screen vision parks the Pocket window off the capture.\n\nComes with KILN. Host: \`python -m pocket serve --port 8787\`.\n\nFamily: pocket-agent · pocket-voice-to-text · PhoneAI.\n`, "seed pocket into kiln", NOW),
+      file("README.md", "Markdown", `# POCKET\n\nNative Agent OS on the machine you own. PhoneAI is the public seat (signup + Face ID). MCP servers are phone apps. Screen vision parks the Pocket window off the capture.\n\nDesk + Edge app: **Spark** is a first-class agent (qwen3.8-27b, file writes, GitHub). **Side by side** docks two sessions (Spark / Grok / Codex) in one window — not standalone views.\n\nHost: \`python -m pocket serve --port 8787\`. Desktop: \`python -m pocket desktop\`.\n\nFamily: pocket-agent · pocket-voice-to-text · PhoneAI · pocket-mailbox.\n`, "seed pocket desk split + spark", NOW),
       file(".kiln/project.json", "JSON", `{\n  "schema": "kiln.project.v1",\n  "projectId": "pocket",\n  "kiln": "ItsNotAILABS/KILN",\n  "repository": "ItsNotAILABS/pocket",\n  "mcpEndpoint": "http://127.0.0.1:8787",\n  "comesWithKiln": true\n}\n`, "seed", NOW),
       file("src/pocket/serve.py", "Python", `def main():\n    print("POCKET host :8787")\n`, "seed", NOW),
       file("LICENSE", "Text", MIT, "seed", NOW),
