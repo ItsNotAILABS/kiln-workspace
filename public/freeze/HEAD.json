@@ -1,0 +1,39 @@
+{
+  "spec": "kiln-hash-pool/v1",
+  "pool": "kiln-original",
+  "pin": {
+    "pool": "kiln-original",
+    "branch": "recovered-20260903",
+    "merkle": "b6987f1928dba93f768f994e52b3244dd00a888809f1ee7e5da98560b3f2f06d",
+    "manifest": "/freeze/kiln-original--recovered-20260903.json"
+  },
+  "branch": "sealed-agi",
+  "merkle": "2c57e5592f7ec4bbff3150c5c165c904d125673a021a9c295e8ebe77f5bffaa2",
+  "createdAt": "2026-09-04T18:40:19.035Z",
+  "manifest": "/freeze/kiln-original--sealed-agi.json",
+  "paper": "/papers/retrieval",
+  "paperMd": "/freeze/KILN-WP-10.md",
+  "paperImport": "/papers/import",
+  "paperImportMd": "/freeze/KILN-WP-11.md",
+  "paperStudio": "/papers/studio",
+  "paperStudioMd": "/freeze/KILN-WP-12.md",
+  "paperAccountMd": "/freeze/KILN-WP-13.md",
+  "paperMachine": "/papers/machine",
+  "paperMachineMd": "/freeze/KILN-WP-14.md",
+  "paperMedia": "/papers/media",
+  "paperMediaMd": "/freeze/KILN-WP-15.md",
+  "paperPublic": "/papers/public",
+  "paperPublicMd": "/freeze/KILN-WP-16.md",
+  "paperStudioKernelMd": "/freeze/KILN-WP-17.md",
+  "paperStudioVisibleMd": "/freeze/KILN-WP-18.md",
+  "paperLockMd": "/freeze/KILN-WP-19.md",
+  "paperPreviewMd": "/freeze/KILN-WP-20.md",
+  "explorer": "/freeze/",
+  "last": {
+    "pool": "kiln-build",
+    "branch": "build-20260904T225247Z",
+    "merkle": "2fe208e4b8e6b270e665b23b27cebf9f19afc037c4983c646c751a8dbcc5a78f",
+    "createdAt": "2026-09-04T22:52:48.077Z",
+    "manifest": "/freeze/kiln-build--build-20260904T225247Z.json"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "spec": "kiln-hash-pool/v1",
+  "pool": "kiln-original",
+  "branch": "recovered-20260903",
+  "merkle": "b6987f1928dba93f768f994e52b3244dd00a888809f1ee7e5da98560b3f2f06d",
+  "manifest": "/freeze/kiln-original--recovered-20260903.json",
+  "note": "Pickup freeze. Immutable. Exactly how the original client was retrieved."
+}
