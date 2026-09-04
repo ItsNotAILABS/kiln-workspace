@@ -13,6 +13,9 @@ artifacts/imagine_images/
 artifacts/imagine_videos/
 attachments/
 recovery-before-codex-*/
+recovered/
+screenshots/
+.node_modules.lock
 kiln-original/assets/
 .DS_Store
 Thumbs.db

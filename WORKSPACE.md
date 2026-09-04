@@ -40,7 +40,9 @@ Merge to `main` only when checks pass: `npm test` · `npm run typecheck`.
 
 ## Pickup
 
-1. Read this file.
+Full resume: `PICKUP.md`.
+
+1. Read this file + `PICKUP.md`.
 2. `git status` — if dirty, commit on **your** lane, do not switch branches dirty.
 3. Live app: `npm run dev` → `0.0.0.0:8080`.
 4. Pocket is already in `src/lib/kiln/seed.ts` as `itsnotailabs/pocket`.
