@@ -1,1 +1,16 @@
-import{t as e}from"./link-BhiAFiqq.js";import{t}from"./jsx-runtime-0vZSBttN.js";import{o as n}from"./AppShell-H-m5HQPd.js";import{t as r}from"./git-fork-DpfawB86.js";import{t as i}from"./star-D3J8rhfx.js";import{G as a,N as o,_ as s,b as c,d as l,v as u}from"./store-sx46DNi5.js";import{n as d,t as f}from"./model-dm89L9bG.js";import{D as p}from"./index-DkUKO55P.js";import{t as m}from"./formatDistanceToNow-SFVSzGBG.js";var h=t();function g(){let{q:t}=p.useSearch(),g=c(),_=t.trim().toLowerCase(),v=l(g).filter(e=>f(e,g.wallet?.handle,g.orgs.map(e=>e.handle))).filter(e=>!_||e.id.toLowerCase().includes(_)||e.description.toLowerCase().includes(_)||e.topics.some(e=>e.includes(_))||e.language.toLowerCase().includes(_)).sort((e,t)=>u(t,g)-u(e,g));return(0,h.jsxs)(`div`,{children:[(0,h.jsx)(`h1`,{className:`font-display text-4xl tracking-tight`,children:`Explore repositories`}),(0,h.jsx)(`p`,{className:`mt-1 text-sm text-muted`,children:`Public git trees on Kiln L1. Names are public. Bytes are ciphertext. git clone, then boot a capsule.`}),(0,h.jsxs)(`ul`,{className:`mt-6 divide-y divide-border rounded-lg border border-border`,children:[v.map(t=>(0,h.jsx)(`li`,{className:`px-4 py-4`,children:(0,h.jsx)(`div`,{className:`flex flex-wrap items-start justify-between gap-3`,children:(0,h.jsxs)(`div`,{className:`min-w-0`,children:[(0,h.jsxs)(e,{to:`/$owner/$repo`,params:{owner:t.owner,repo:t.name},className:`font-medium text-seal hover:underline`,children:[t.owner,`/`,t.name]}),(0,h.jsx)(`p`,{className:`mt-1 text-sm text-muted`,children:t.description}),(0,h.jsxs)(`div`,{className:`mt-2 flex flex-wrap items-center gap-3 text-xs text-muted`,children:[(0,h.jsxs)(`span`,{className:`inline-flex items-center gap-1.5`,children:[(0,h.jsx)(`span`,{className:`size-2 rounded-full`,style:{background:d(t.language)}}),t.language]}),(0,h.jsxs)(`span`,{className:`inline-flex items-center gap-1`,children:[(0,h.jsx)(i,{className:`size-3`}),` `,u(t,g)]}),(0,h.jsxs)(`span`,{className:`inline-flex items-center gap-1`,children:[(0,h.jsx)(r,{className:`size-3`}),` `,t.forks]}),(0,h.jsxs)(`span`,{className:`tabular-nums`,children:[a(s(t,g)),` TVL`]}),(0,h.jsx)(n,{encrypted:t.encrypted,grant:t.viewerGrant}),(0,h.jsx)(`span`,{className:`font-mono`,children:o(t.modelId).label}),(0,h.jsx)(`span`,{children:m(new Date(t.updatedAt),{addSuffix:!0})})]})]})})},t.id)),v.length===0?(0,h.jsx)(`li`,{className:`px-4 py-10 text-center text-sm text-muted`,children:`No repositories match.`}):null]})]})}export{g as component};
+import { t as jsxmod } from "./jsx-runtime-0vZSBttN.js";
+import { GithubExplorer } from "./explore-github.js";
+import { component as KilnExplore } from "./explore-list.js";
+
+const j = jsxmod();
+
+function ExplorePage() {
+  return j.jsxs("div", {
+    children: [
+      j.jsx(GithubExplorer, {}),
+      j.jsx("div", { className: "mt-10", children: j.jsx(KilnExplore, {}) }),
+    ],
+  });
+}
+
+export { ExplorePage as component };
