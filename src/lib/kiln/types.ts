@@ -347,6 +347,7 @@ export const AGENT_ROLES = [
   { id: "scout", label: "Scout", blurb: "Searches the forge, summarizes, finds the work.", priceKln: 40 },
   { id: "cipher", label: "Cipher", blurb: "Seals trees, rotates keys, verifies Merkle proofs.", priceKln: 110 },
   { id: "indexer", label: "Indexer", blurb: "Keeps folder memory, quota, and search indexes honest.", priceKln: 55 },
+  { id: "spark", label: "Spark", blurb: "Reagent qwen3.8-27b on the Pocket host. Writes files, inspects GitHub, sits beside Grok on Desktop/Edge /desk.", priceKln: 27 },
 ] as const;
 
 export const REPO_KINDS: { id: RepoKind; label: string; blurb: string }[] = [

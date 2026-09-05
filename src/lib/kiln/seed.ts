@@ -885,6 +885,16 @@ export const SEED_ISSUES: Issue[] = [
     comments: [{ id: "c9", author: "itsnotailabs", body: "OFFLINE_CEILING = 72h. drain() drops expired envelopes.", createdAt: I }],
   }),
   iss("itsnotailabs/vlaptop", 1, "SCREEN-KERNEL/1.1 verb table as the public contract", "SEE / TOUCH / TYPE / CLICK named buttons. Keep the table stable.", "itsnotailabs", "open", ["kernel"], NOW),
+  iss(
+    "itsnotailabs/pocket",
+    1,
+    "Desk auto-split: Spark + Grok in one Desktop/Edge window",
+    "Seat Spark then a second agent on /desk. Same window, two panes. Spark is a Pocket sub-agent (qwen3.8-27b) with file/GitHub tools. Do not open /spark as a standalone view.",
+    "spark",
+    "closed",
+    ["desk", "agents"],
+    NOW,
+  ),
 ];
 
 export const SEED_PULLS: Pull[] = [
@@ -959,7 +969,7 @@ export const SEED_WIKI: WikiPage[] = [
   { repoId: "kiln-labs/protocol", slug: "Settlement", title: "Settlement", body: "# Settlement\n\nEvery `git push` lands as a `commit` transaction. The block hash is canonical history.", updatedAt: F, author: "kiln-labs" },
   { repoId: "kiln-labs/protocol", slug: "Header", title: "Header", body: "# Header\n\n32-byte key commitment. Public trees write zeros; they do not omit the field.", updatedAt: F, author: "kiln-labs" },
   { repoId: "itsnotailabs/vlaptop", slug: "Home", title: "Home", body: "# vLaptop wiki\n\nSCREEN-KERNEL/1.1 is the public contract. Verbs: SEE, TOUCH, TYPE, CLICK.", updatedAt: NOW, author: "itsnotailabs" },
-  { repoId: "itsnotailabs/pocket", slug: "Home", title: "Home", body: "# POCKET wiki\n\nShips with KILN. PhoneAI public seat. MCP apps. Host :8787.", updatedAt: NOW, author: "itsnotailabs" },
+  { repoId: "itsnotailabs/pocket", slug: "Home", title: "Home", body: "# POCKET wiki\n\nShips with KILN. PhoneAI public seat. MCP apps. Host :8787.\n\n**Desktop / Edge** (`/desk`): Spark is a first-class agent. Seat a second agent and the desk auto-splits in one window — not standalone views. GitHub: [ItsNotAILABS/pocket](https://github.com/ItsNotAILABS/pocket) `9a637ea`.", updatedAt: NOW, author: "itsnotailabs" },
 ];
 
 export const SEED_DISCUSSIONS: Discussion[] = [
