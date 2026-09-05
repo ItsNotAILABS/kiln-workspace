@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { toast } from "sonner";
 import { syncHash } from "@/lib/utils";
 import type {
@@ -810,6 +810,16 @@ export const useKiln = create<KilnState>()(
     }),
     {
       name: "kiln-v4",
+      skipHydration: true,
+      storage: createJSONStorage(() =>
+        typeof window === "undefined"
+          ? {
+              getItem: () => null,
+              setItem: () => {},
+              removeItem: () => {},
+            }
+          : localStorage,
+      ),
       partialize: (s) => ({
         wallet: s.wallet,
         balance: s.balance,
