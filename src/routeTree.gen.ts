@@ -17,7 +17,6 @@ import { Route as AssistantsRouteImport } from './routes/assistants'
 import { Route as CliRouteImport } from './routes/cli'
 import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as ExploreRouteImport } from './routes/explore'
-import { Route as FleetRouteImport } from './routes/fleet'
 import { Route as GistsRouteImport } from './routes/gists'
 import { Route as GpuRouteImport } from './routes/gpu'
 import { Route as IssuesRouteImport } from './routes/issues'
@@ -31,13 +30,9 @@ import { Route as PapersRouteImport } from './routes/papers'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PullsRouteImport } from './routes/pulls'
 import { Route as SearchRouteImport } from './routes/search'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ShipatonRouteImport } from './routes/shipaton'
-import { Route as SigninRouteImport } from './routes/signin'
 import { Route as StarsRouteImport } from './routes/stars'
 import { Route as StartRouteImport } from './routes/start'
 import { Route as StudioRouteImport } from './routes/studio'
-import { Route as SwarmRouteImport } from './routes/swarm'
 import { Route as TrendingRouteImport } from './routes/trending'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as OwnerIndexRouteImport } from './routes/$owner/index'
@@ -119,11 +114,6 @@ const ExploreRoute = ExploreRouteImport.update({
   path: '/explore',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FleetRoute = FleetRouteImport.update({
-  id: '/fleet',
-  path: '/fleet',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const GistsRoute = GistsRouteImport.update({
   id: '/gists',
   path: '/gists',
@@ -189,21 +179,6 @@ const SearchRoute = SearchRouteImport.update({
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShipatonRoute = ShipatonRouteImport.update({
-  id: '/shipaton',
-  path: '/shipaton',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SigninRoute = SigninRouteImport.update({
-  id: '/signin',
-  path: '/signin',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const StarsRoute = StarsRouteImport.update({
   id: '/stars',
   path: '/stars',
@@ -217,11 +192,6 @@ const StartRoute = StartRouteImport.update({
 const StudioRoute = StudioRouteImport.update({
   id: '/studio',
   path: '/studio',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SwarmRoute = SwarmRouteImport.update({
-  id: '/swarm',
-  path: '/swarm',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrendingRoute = TrendingRouteImport.update({
@@ -434,7 +404,6 @@ export interface FileRoutesByFullPath {
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
   '/explore': typeof ExploreRoute
-  '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
@@ -448,13 +417,9 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
-  '/shipaton': typeof ShipatonRoute
-  '/signin': typeof SigninRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
-  '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
@@ -505,7 +470,6 @@ export interface FileRoutesByTo {
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
   '/explore': typeof ExploreRoute
-  '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
@@ -519,13 +483,9 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
-  '/shipaton': typeof ShipatonRoute
-  '/signin': typeof SigninRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
-  '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
   '/gists/$id': typeof GistsIdRoute
@@ -576,7 +536,6 @@ export interface FileRoutesById {
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
   '/explore': typeof ExploreRoute
-  '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
@@ -590,13 +549,9 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
-  '/settings': typeof SettingsRoute
-  '/shipaton': typeof ShipatonRoute
-  '/signin': typeof SigninRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
-  '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
@@ -649,7 +604,6 @@ export interface FileRouteTypes {
     | '/cli'
     | '/cloud'
     | '/explore'
-    | '/fleet'
     | '/gists'
     | '/gpu'
     | '/issues'
@@ -663,13 +617,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
-    | '/settings'
-    | '/shipaton'
-    | '/signin'
     | '/stars'
     | '/start'
     | '/studio'
-    | '/swarm'
     | '/trending'
     | '/wallet'
     | '/$owner/$repo'
@@ -720,7 +670,6 @@ export interface FileRouteTypes {
     | '/cli'
     | '/cloud'
     | '/explore'
-    | '/fleet'
     | '/gists'
     | '/gpu'
     | '/issues'
@@ -734,13 +683,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
-    | '/settings'
-    | '/shipaton'
-    | '/signin'
     | '/stars'
     | '/start'
     | '/studio'
-    | '/swarm'
     | '/trending'
     | '/wallet'
     | '/gists/$id'
@@ -790,7 +735,6 @@ export interface FileRouteTypes {
     | '/cli'
     | '/cloud'
     | '/explore'
-    | '/fleet'
     | '/gists'
     | '/gpu'
     | '/issues'
@@ -804,13 +748,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
-    | '/settings'
-    | '/shipaton'
-    | '/signin'
     | '/stars'
     | '/start'
     | '/studio'
-    | '/swarm'
     | '/trending'
     | '/wallet'
     | '/$owner/$repo'
@@ -862,7 +802,6 @@ export interface RootRouteChildren {
   CliRoute: typeof CliRoute
   CloudRoute: typeof CloudRoute
   ExploreRoute: typeof ExploreRoute
-  FleetRoute: typeof FleetRoute
   GistsRoute: typeof GistsRouteWithChildren
   GpuRoute: typeof GpuRoute
   IssuesRoute: typeof IssuesRoute
@@ -876,13 +815,9 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   PullsRoute: typeof PullsRoute
   SearchRoute: typeof SearchRoute
-  SettingsRoute: typeof SettingsRoute
-  ShipatonRoute: typeof ShipatonRoute
-  SigninRoute: typeof SigninRoute
   StarsRoute: typeof StarsRoute
   StartRoute: typeof StartRoute
   StudioRoute: typeof StudioRoute
-  SwarmRoute: typeof SwarmRoute
   TrendingRoute: typeof TrendingRoute
   WalletRoute: typeof WalletRoute
   OwnerRepoRoute: typeof OwnerRepoRouteWithChildren
@@ -946,13 +881,6 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/explore'
       preLoaderRoute: typeof ExploreRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fleet': {
-      id: '/fleet'
-      path: '/fleet'
-      fullPath: '/fleet'
-      preLoaderRoute: typeof FleetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gists': {
@@ -1046,27 +974,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shipaton': {
-      id: '/shipaton'
-      path: '/shipaton'
-      fullPath: '/shipaton'
-      preLoaderRoute: typeof ShipatonRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signin': {
-      id: '/signin'
-      path: '/signin'
-      fullPath: '/signin'
-      preLoaderRoute: typeof SigninRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/stars': {
       id: '/stars'
       path: '/stars'
@@ -1086,13 +993,6 @@ declare module '@tanstack/react-router' {
       path: '/studio'
       fullPath: '/studio'
       preLoaderRoute: typeof StudioRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/swarm': {
-      id: '/swarm'
-      path: '/swarm'
-      fullPath: '/swarm'
-      preLoaderRoute: typeof SwarmRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trending': {
@@ -1495,7 +1395,6 @@ const rootRouteChildren: RootRouteChildren = {
   CliRoute: CliRoute,
   CloudRoute: CloudRoute,
   ExploreRoute: ExploreRoute,
-  FleetRoute: FleetRoute,
   GistsRoute: GistsRouteWithChildren,
   GpuRoute: GpuRoute,
   IssuesRoute: IssuesRoute,
@@ -1509,13 +1408,9 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   PullsRoute: PullsRoute,
   SearchRoute: SearchRoute,
-  SettingsRoute: SettingsRoute,
-  ShipatonRoute: ShipatonRoute,
-  SigninRoute: SigninRoute,
   StarsRoute: StarsRoute,
   StartRoute: StartRoute,
   StudioRoute: StudioRoute,
-  SwarmRoute: SwarmRoute,
   TrendingRoute: TrendingRoute,
   WalletRoute: WalletRoute,
   OwnerRepoRoute: OwnerRepoRouteWithChildren,
