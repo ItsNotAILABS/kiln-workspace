@@ -9,35 +9,6 @@ import os from "node:os";
 import path from "node:path";
 import { INFRA_SCHEMA, INFRA_SET, renderCapsule, runInfraTool } from "./kiln-infra.mjs";
 
-/**
- * Request payload for agent turns / computer runs. Arbitrary JSON from the
- * client; readers access it defensively.
- * @typedef {Record<string, any>} TurnPayload
- */
-
-/**
- * @typedef {Object} ChatMessage
- * @property {"system" | "user" | "assistant" | "tool"} role
- * @property {string} content
- * @property {string} [tool_call_id]
- * @property {unknown[]} [tool_calls]
- */
-
-/**
- * @typedef {Object} KilnRequest
- * @property {string} [method]
- * @property {string} [bodyText]
- * @property {Record<string, any>} [query]
- */
-
-/**
- * @typedef {Object} L1Chain
- * @property {number} height
- * @property {any[]} blocks
- * @property {any[]} txs
- * @property {string} [head]
- */
-
 const TOOLS = [
   { name: "kiln_list_files", description: "List files in a repository path. Always call this before you claim you know the tree. path empty = root.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" } }, required: ["repo"] } },
   { name: "kiln_read_file", description: "Read a file from the working tree. You will see the real bytes. Use this instead of guessing contents.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" } }, required: ["repo", "path"] } },
@@ -58,7 +29,6 @@ const TOOLS = [
   ...INFRA_SCHEMA,
 ];
 
-/** @param {number} status @param {unknown} body */
 function json(status, body) {
   return {
     status,
@@ -71,7 +41,6 @@ function json(status, body) {
   };
 }
 
-/** @param {TurnPayload} data @returns {string} */
 function systemFor(data) {
   const role = data.role || "builder";
   const repo = data.repoId || "unknown";
@@ -101,14 +70,11 @@ function systemFor(data) {
     .join("\n");
 }
 
-/** @param {unknown} raw @returns {ChatMessage[]} */
 function mapMessages(raw) {
-  /** @type {ChatMessage[]} */
   const out = [];
   if (!Array.isArray(raw)) return out;
   for (const m of raw.slice(-120)) {
     const role = m.role === "tool" ? "tool" : m.role === "assistant" ? "assistant" : "user";
-    /** @type {ChatMessage} */
     const msg = { role, content: typeof m.content === "string" ? m.content : m.content == null ? "" : String(m.content) };
     if (role === "tool" && m.tool_call_id) msg.tool_call_id = m.tool_call_id;
     if (role === "assistant" && Array.isArray(m.tool_calls)) msg.tool_calls = m.tool_calls;
@@ -117,7 +83,6 @@ function mapMessages(raw) {
   return out;
 }
 
-/** @param {TurnPayload} [data] @param {string} [reason] */
 function localBuilder(data = {}, reason = "model unavailable") {
   const last = Array.isArray(data.messages)
     ? [...data.messages].reverse().find((m) => m.role === "user" || m.role === "system")
@@ -165,7 +130,6 @@ const LIVE_CHAT = new Set([
   "grok-build-0.1",
 ]);
 
-/** @type {Record<string, string>} */
 const MODEL_ALIAS = {
   "grok-agi": "grok-4.6",
   "grok-4": "grok-4.6",
@@ -203,7 +167,6 @@ const MODEL_ALIAS = {
   "nova-mobile": "grok-4.6",
 };
 
-/** @param {TurnPayload} [data] @returns {string} */
 export function resolveApiModel(data = {}) {
   const raw = String(data.apiModel || data.apiId || data.modelId || "grok-4.6")
     .trim()
@@ -236,7 +199,6 @@ export function liveModels() {
   };
 }
 
-/** @param {TurnPayload} [data] */
 function chatTarget(data = {}) {
   const byokUrl = String(data.baseUrl || "").trim();
   const byokKey = String(data.apiKey || "").trim();
@@ -260,7 +222,6 @@ function chatTarget(data = {}) {
   };
 }
 
-/** @param {TurnPayload} [data] */
 export async function runAgentTurn(data = {}) {
   const target = chatTarget(data);
   const apiKey = target.key;
@@ -299,7 +260,6 @@ export async function runAgentTurn(data = {}) {
     return localBuilder(data, `xAI API ${res.status}`);
   }
   const body = await res.json();
-  /** @type {{ content?: string, tool_calls?: Array<{ id?: string, name?: string, function?: { name?: string, arguments?: string } }> }} */
   const msg = body.choices?.[0]?.message || {};
   const toolCalls = Array.isArray(msg.tool_calls)
     ? msg.tool_calls.map((c) => ({
@@ -311,7 +271,6 @@ export async function runAgentTurn(data = {}) {
   return { ok: true, text: msg.content || "", toolCalls, error: undefined };
 }
 
-/** @param {TurnPayload} data @param {unknown} stream */
 function xaiPayload(data, stream) {
   const messages = [{ role: "system", content: systemFor(data) }, ...mapMessages(data.messages)];
   if (messages.length === 1) {
@@ -329,11 +288,7 @@ function xaiPayload(data, stream) {
   };
 }
 
-/**
- * @param {TurnPayload} [data]
- * @param {(chunk: Record<string, unknown>) => void} [write]
- */
-export async function runAgentTurnStream(data = {}, write = () => {}) {
+export async function runAgentTurnStream(data = {}, write) {
   const target = chatTarget(data);
   const apiKey = target.key;
   if (!apiKey) {
@@ -407,7 +362,6 @@ export async function runAgentTurnStream(data = {}, write = () => {}) {
   return result;
 }
 
-/** @param {unknown} body */
 export async function handleMcp(body) {
   const req = typeof body === "string" ? JSON.parse(body || "{}") : body || {};
   const id = req.id ?? 1;
@@ -456,11 +410,6 @@ export async function handleMcp(body) {
   return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown method ${method}` } };
 }
 
-/**
- * @param {string} cmd
- * @param {string[]} args
- * @param {{ cwd?: string, timeout?: number, input?: string }} [opts]
- */
 function runChild(cmd, args, { cwd, timeout = 4000, input } = {}) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
@@ -496,7 +445,6 @@ function runChild(cmd, args, { cwd, timeout = 4000, input } = {}) {
 
 const COMPUTER_ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "computers");
 
-/** @param {unknown} repoId @returns {string} */
 function safeRepoDir(repoId) {
   const safe = String(repoId || "kiln/kiln")
     .replace(/[^a-zA-Z0-9._/-]+/g, "_")
@@ -507,7 +455,6 @@ function safeRepoDir(repoId) {
   return dir;
 }
 
-/** @param {string} dir @param {unknown} files @returns {number} */
 function materializeTree(dir, files) {
   if (!Array.isArray(files)) return 0;
   let n = 0;
@@ -525,7 +472,6 @@ function materializeTree(dir, files) {
   return n;
 }
 
-/** @param {unknown} raw @returns {string} */
 function translateShell(raw) {
   let cmd = String(raw || "").trim();
   if (/^wsl\b/i.test(cmd)) {
@@ -544,7 +490,6 @@ function translateShell(raw) {
   return cmd;
 }
 
-/** @param {TurnPayload} [data] */
 export async function runOnComputer(data = {}) {
   const lang = String(data.lang || data.language || "").toLowerCase();
   const source = String(data.source || data.code || data.body || "");
@@ -584,7 +529,6 @@ export async function runOnComputer(data = {}) {
   }
 }
 
-/** @param {string} pathname @param {KilnRequest} req */
 export async function handleKilnApi(pathname, req) {
   if (pathname === "/api/kiln/models" && (req.method === "GET" || req.method === "POST")) {
     const live = liveModels();
@@ -601,7 +545,7 @@ export async function handleKilnApi(pathname, req) {
     if (req.method === "GET") {
       return json(200, { ok: true, tools: TOOLS.map((t) => t.name), transport: "JSON-RPC 2.0 POST /api/mcp" });
     }
-    /** @type {TurnPayload} */ let data = {};
+    let data = {};
     try {
       data = JSON.parse(req.bodyText || "{}");
     } catch {
@@ -614,7 +558,7 @@ export async function handleKilnApi(pathname, req) {
     }
   }
   if (pathname === "/api/kiln/agent-turn" && (req.method === "POST" || req.method === "PUT")) {
-    /** @type {TurnPayload} */ let data = {};
+    let data = {};
     try {
       data = JSON.parse(req.bodyText || "{}");
     } catch {
@@ -630,7 +574,6 @@ export async function handleKilnApi(pathname, req) {
   if (pathname === "/api/kiln/l1" && (req.method === "POST" || req.method === "PUT" || req.method === "GET")) {
     const file = path.join(process.cwd(), "data", "l1.json");
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    /** @type {L1Chain} */
     let chain = { height: 0, blocks: [], txs: [] };
     try {
       chain = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -638,7 +581,7 @@ export async function handleKilnApi(pathname, req) {
       /* genesis */
     }
     if (req.method === "GET") return json(200, { ok: true, ...chain, height: chain.blocks?.length || chain.height || 0 });
-    /** @type {TurnPayload} */ let data = {};
+    let data = {};
     try {
       data = JSON.parse(req.bodyText || "{}");
     } catch {
@@ -654,7 +597,7 @@ export async function handleKilnApi(pathname, req) {
     return json(200, { ok: true, height: chain.height, hash: chain.head, tx: tx?.hash });
   }
   if (pathname === "/api/kiln/run" && (req.method === "POST" || req.method === "PUT")) {
-    /** @type {TurnPayload} */ let data = {};
+    let data = {};
     try {
       data = JSON.parse(req.bodyText || "{}");
     } catch {
@@ -668,7 +611,7 @@ export async function handleKilnApi(pathname, req) {
     }
   }
   if ((pathname === "/api/kiln/infra" || pathname === "/api/kiln/physics") && (req.method === "POST" || req.method === "GET")) {
-    /** @type {TurnPayload} */ let data = {};
+    let data = {};
     try {
       data = JSON.parse(req.bodyText || "{}");
     } catch {
@@ -684,7 +627,7 @@ export async function handleKilnApi(pathname, req) {
     }
   }
   if (pathname === "/api/kiln/capsule" && (req.method === "GET" || req.method === "POST")) {
-    /** @type {TurnPayload} */ let data = {};
+    let data = {};
     try {
       data = JSON.parse(req.bodyText || "{}");
     } catch {
