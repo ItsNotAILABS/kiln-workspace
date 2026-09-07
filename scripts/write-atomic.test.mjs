@@ -164,18 +164,12 @@ test("cli: relative paths follow the script's root, not the caller's cwd", () =>
   assert.equal(existsSync(join(root, "public/og.jpg")), false);
 });
 
-test("every hand-over the og skill prints is one this script accepts", (t) => {
+test("every hand-over the og skill prints is one this script accepts", () => {
   // The card and banner recipes live in the skill's references/, not SKILL.md.
-  // Both are platform-injected deploy chrome: skip when absent in this checkout.
   const skillDir = join(TEMPLATE_ROOT, ".grok/skills/og");
-  const refsDir = join(skillDir, "references");
-  if (!existsSync(join(skillDir, "SKILL.md")) || !existsSync(refsDir)) {
-    t.skip("platform files absent in this checkout: .grok/skills/og/");
-    return;
-  }
   const docs = [
     join(skillDir, "SKILL.md"),
-    ...readdirSync(refsDir).map((f) => join(refsDir, f)),
+    ...readdirSync(join(skillDir, "references")).map((f) => join(skillDir, "references", f)),
   ];
   const invocations = docs.flatMap(
     (path) => readFileSync(path, "utf8").match(/node scripts\/write-atomic\.mjs[^\n`]*/g) ?? [],
