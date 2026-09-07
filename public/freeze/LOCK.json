@@ -3,91 +3,20 @@
   "pool": "kiln-original",
   "sourceBranch": "sealed-agi",
   "sourceMerkle": "edc0d38bc93bbce3a3d89501e8c9554e98b89577f7a21edeedbe1b341c104df0",
-  "note": "Protected product files. Restore from cas/sha256 on boot. Studio is restored, never rewritten. Preview tab and AGI (Nova) seat are part of Studio. Marketing routes are not in this lock. Python infra is not in this lock.",
+  "note": "Protected product files restore from CAS on boot. Operator browser boot is intentionally excluded: privileged credentials must never be restored from a public CAS snapshot.",
   "files": [
-    {
-      "path": "public/assets/studio-tabs.js",
-      "sha256": "5b853913f35e3e8df3412a0dabf63b0ab436469f2003637f0006fd4a29b0eae5",
-      "size": 59532,
-      "reason": "Studio crew, Grok AgentChat, Write file, graph"
-    },
-    {
-      "path": "public/assets/kiln-chat.css",
-      "sha256": "0adc57791f0ed1070a40376a475340832b59446f7d40e1568d912e80fdd9568e",
-      "size": 6921,
-      "reason": "Bubbles plus layout that gives the Grok pane height"
-    },
-    {
-      "path": "public/assets/chat-ui.js",
-      "sha256": "701d854e63d28359254fba37691cfa0dfa2316dc8803f94b3669247aa324b7a2",
-      "size": 7211,
-      "reason": "Gx chat bubbles"
-    },
-    {
-      "path": "public/assets/kernel-Y7F91935.js",
-      "sha256": "7c7e97420aef8b040c430dbd060cf46d178620822f32f756a779252049584248",
-      "size": 11355,
-      "reason": "POST /api/kiln/agent-turn"
-    },
-    {
-      "path": "public/assets/studio-fjyqp5G-.js",
-      "sha256": "5ad69c42dd09a42c983239549aed8cb44e1289a905c4d8ee4ebabc0b556872da",
-      "size": 332,
-      "reason": "Studio route re-export"
-    },
-    {
-      "path": "public/assets/kiln-forge.js",
-      "sha256": "9324c1c291544a53b0618581fa6caa3d59430adc3ce63faac51fedf082a4c832",
-      "size": 10168,
-      "reason": "Operator boot"
-    },
-    {
-      "path": "public/index.html",
-      "sha256": "42eb5526701bc9fdfc2e27c8d54696b7df1df7eae1bc21d49ce035e1766a420b",
-      "size": 1055,
-      "reason": "SPA entry: #app + kiln-client (no document hydrate)"
-    },
-    {
-      "path": "scripts/agent-turn.mjs",
-      "sha256": "6f8d635acb2c3138635350f918cfae548096e9a6fd3ac07494bcac4561acfb7f",
-      "size": 27717,
-      "reason": "Grok tools; writes as git commits"
-    },
-    {
-      "path": "scripts/serve-original.mjs",
-      "sha256": "20f7d4e7ba3780122fef28f6dc48efc25fd12966392fee9033ad29aaca48846a",
-      "size": 6453,
-      "reason": "Public document server"
-    },
-    {
-      "path": "scripts/kiln-lock.mjs",
-      "sha256": "4039ba04352ec15ed85d5d489a02cc013a64e0b85e5ee3d470ee0da3d9db2a32",
-      "size": 4023,
-      "reason": "This restore"
-    },
-    {
-      "path": "startup.sh",
-      "sha256": "bd415f9e0fc230ddf7105b8ff18e6e52271e7a5f39d01ccf3fb603b468896758",
-      "size": 397,
-      "reason": "Boot runs restore before serve"
-    },
-    {
-      "path": "public/assets/kiln-client.js",
-      "sha256": "77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964",
-      "size": 331890,
-      "reason": "Client boot: skip mn, mount #app, createRoot"
-    },
-    {
-      "path": "public/assets/kiln-boot.js",
-      "sha256": "77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964",
-      "size": 331890,
-      "reason": "Same patched boot (legacy URL)"
-    },
-    {
-      "path": "public/assets/index-kiln-client.js",
-      "sha256": "77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964",
-      "size": 331890,
-      "reason": "Same patched boot (legacy URL)"
-    }
+    {"path":"public/assets/studio-tabs.js","sha256":"5b853913f35e3e8df3412a0dabf63b0ab436469f2003637f0006fd4a29b0eae5","size":59532,"reason":"Studio crew, Grok AgentChat, Write file, graph"},
+    {"path":"public/assets/kiln-chat.css","sha256":"0adc57791f0ed1070a40376a475340832b59446f7d40e1568d912e80fdd9568e","size":6921,"reason":"Bubbles plus layout that gives the Grok pane height"},
+    {"path":"public/assets/chat-ui.js","sha256":"701d854e63d28359254fba37691cfa0dfa2316dc8803f94b3669247aa324b7a2","size":7211,"reason":"Gx chat bubbles"},
+    {"path":"public/assets/kernel-Y7F91935.js","sha256":"7c7e97420aef8b040c430dbd060cf46d178620822f32f756a779252049584248","size":11355,"reason":"POST /api/kiln/agent-turn"},
+    {"path":"public/assets/studio-fjyqp5G-.js","sha256":"5ad69c42dd09a42c983239549aed8cb44e1289a905c4d8ee4ebabc0b556872da","size":332,"reason":"Studio route re-export"},
+    {"path":"public/index.html","sha256":"42eb5526701bc9fdfc2e27c8d54696b7df1df7eae1bc21d49ce035e1766a420b","size":1055,"reason":"SPA entry: #app + kiln-client (no document hydrate)"},
+    {"path":"scripts/agent-turn.mjs","sha256":"6f8d635acb2c3138635350f918cfae548096e9a6fd3ac07494bcac4561acfb7f","size":27717,"reason":"Grok tools; writes as git commits"},
+    {"path":"scripts/serve-original.mjs","sha256":"20f7d4e7ba3780122fef28f6dc48efc25fd12966392fee9033ad29aaca48846a","size":6453,"reason":"Public document server"},
+    {"path":"scripts/kiln-lock.mjs","sha256":"4039ba04352ec15ed85d5d489a02cc013a64e0b85e5ee3d470ee0da3d9db2a32","size":4023,"reason":"This restore"},
+    {"path":"startup.sh","sha256":"bd415f9e0fc230ddf7105b8ff18e6e52271e7a5f39d01ccf3fb603b468896758","size":397,"reason":"Boot runs restore before serve"},
+    {"path":"public/assets/kiln-client.js","sha256":"77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964","size":331890,"reason":"Client boot: skip mn, mount #app, createRoot"},
+    {"path":"public/assets/kiln-boot.js","sha256":"77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964","size":331890,"reason":"Same patched boot (legacy URL)"},
+    {"path":"public/assets/index-kiln-client.js","sha256":"77fa3da44dd77f8992c82596a82568c571d9c47a4480d1b8c34f4acf66cd6964","size":331890,"reason":"Same patched boot (legacy URL)"}
   ]
 }
