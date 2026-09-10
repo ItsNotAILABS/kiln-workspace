@@ -17,6 +17,7 @@ import { Route as AssistantsRouteImport } from './routes/assistants'
 import { Route as CliRouteImport } from './routes/cli'
 import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as ExploreRouteImport } from './routes/explore'
+import { Route as FleetRouteImport } from './routes/fleet'
 import { Route as GistsRouteImport } from './routes/gists'
 import { Route as GpuRouteImport } from './routes/gpu'
 import { Route as IssuesRouteImport } from './routes/issues'
@@ -30,6 +31,7 @@ import { Route as PapersRouteImport } from './routes/papers'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PullsRouteImport } from './routes/pulls'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as ShipatonRouteImport } from './routes/shipaton'
 import { Route as StarsRouteImport } from './routes/stars'
 import { Route as StartRouteImport } from './routes/start'
 import { Route as StudioRouteImport } from './routes/studio'
@@ -114,6 +116,11 @@ const ExploreRoute = ExploreRouteImport.update({
   path: '/explore',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FleetRoute = FleetRouteImport.update({
+  id: '/fleet',
+  path: '/fleet',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GistsRoute = GistsRouteImport.update({
   id: '/gists',
   path: '/gists',
@@ -177,6 +184,11 @@ const PullsRoute = PullsRouteImport.update({
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShipatonRoute = ShipatonRouteImport.update({
+  id: '/shipaton',
+  path: '/shipaton',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StarsRoute = StarsRouteImport.update({
@@ -404,6 +416,7 @@ export interface FileRoutesByFullPath {
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
   '/explore': typeof ExploreRoute
+  '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
@@ -417,6 +430,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
+  '/shipaton': typeof ShipatonRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
@@ -470,6 +484,7 @@ export interface FileRoutesByTo {
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
   '/explore': typeof ExploreRoute
+  '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
@@ -483,6 +498,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
+  '/shipaton': typeof ShipatonRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
@@ -536,6 +552,7 @@ export interface FileRoutesById {
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
   '/explore': typeof ExploreRoute
+  '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
@@ -549,6 +566,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
+  '/shipaton': typeof ShipatonRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
@@ -604,6 +622,7 @@ export interface FileRouteTypes {
     | '/cli'
     | '/cloud'
     | '/explore'
+    | '/fleet'
     | '/gists'
     | '/gpu'
     | '/issues'
@@ -617,6 +636,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
+    | '/shipaton'
     | '/stars'
     | '/start'
     | '/studio'
@@ -670,6 +690,7 @@ export interface FileRouteTypes {
     | '/cli'
     | '/cloud'
     | '/explore'
+    | '/fleet'
     | '/gists'
     | '/gpu'
     | '/issues'
@@ -683,6 +704,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
+    | '/shipaton'
     | '/stars'
     | '/start'
     | '/studio'
@@ -735,6 +757,7 @@ export interface FileRouteTypes {
     | '/cli'
     | '/cloud'
     | '/explore'
+    | '/fleet'
     | '/gists'
     | '/gpu'
     | '/issues'
@@ -748,6 +771,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
+    | '/shipaton'
     | '/stars'
     | '/start'
     | '/studio'
@@ -802,6 +826,7 @@ export interface RootRouteChildren {
   CliRoute: typeof CliRoute
   CloudRoute: typeof CloudRoute
   ExploreRoute: typeof ExploreRoute
+  FleetRoute: typeof FleetRoute
   GistsRoute: typeof GistsRouteWithChildren
   GpuRoute: typeof GpuRoute
   IssuesRoute: typeof IssuesRoute
@@ -815,6 +840,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   PullsRoute: typeof PullsRoute
   SearchRoute: typeof SearchRoute
+  ShipatonRoute: typeof ShipatonRoute
   StarsRoute: typeof StarsRoute
   StartRoute: typeof StartRoute
   StudioRoute: typeof StudioRoute
@@ -881,6 +907,13 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/explore'
       preLoaderRoute: typeof ExploreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fleet': {
+      id: '/fleet'
+      path: '/fleet'
+      fullPath: '/fleet'
+      preLoaderRoute: typeof FleetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gists': {
@@ -972,6 +1005,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shipaton': {
+      id: '/shipaton'
+      path: '/shipaton'
+      fullPath: '/shipaton'
+      preLoaderRoute: typeof ShipatonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/stars': {
@@ -1395,6 +1435,7 @@ const rootRouteChildren: RootRouteChildren = {
   CliRoute: CliRoute,
   CloudRoute: CloudRoute,
   ExploreRoute: ExploreRoute,
+  FleetRoute: FleetRoute,
   GistsRoute: GistsRouteWithChildren,
   GpuRoute: GpuRoute,
   IssuesRoute: IssuesRoute,
@@ -1408,6 +1449,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   PullsRoute: PullsRoute,
   SearchRoute: SearchRoute,
+  ShipatonRoute: ShipatonRoute,
   StarsRoute: StarsRoute,
   StartRoute: StartRoute,
   StudioRoute: StudioRoute,

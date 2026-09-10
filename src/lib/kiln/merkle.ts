@@ -1,4 +1,4 @@
-import { sha256Hex } from "./crypto";
+import { sha256Hex } from "./crypto.ts";
 
 /** Binary Merkle over hex leaves. Odd nodes are duplicated (Bitcoin-style). */
 export async function merkleRoot(leaves: string[]): Promise<string> {
