@@ -32,6 +32,8 @@ const PALETTE = [
   { id: "cli", group: "Tools", label: "CLI", href: "/cli" },
   { id: "gpu", group: "Tools", label: "WebGPU", href: "/gpu" },
   { id: "mcp", group: "Tools", label: "MCP", href: "/mcp" },
+  { id: "fleet", group: "Tools", label: "Fleet status", href: "/fleet" },
+  { id: "shipaton", group: "Platform", label: "Shipaton", href: "/shipaton" },
 ];
 
 function inField(e: KeyboardEvent) {
