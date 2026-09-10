@@ -13,12 +13,13 @@ import {
   entriesAt,
   findRepo,
   kilnHost,
-  starCount,
   useKiln,
 } from "@/lib/kiln/store";
 import { LANG_COLOR } from "@/lib/kiln/types";
 import { Markdown } from "@/components/Markdown";
 import type { RepoFile } from "@/lib/kiln/types";
+import { isFixtureRepo, displayStars, displayForks, displayChain } from "@/lib/kiln/provenance";
+import { useLiveRepoStats, liveStatsFor } from "@/lib/kiln/use-live-stats";
 
 export function RepoLayout() {
   const { owner, repo: name } = useParams({ strict: false }) as { owner: string; repo: string };
@@ -38,9 +39,15 @@ export function RepoLayout() {
 export function RepoHeader({ repoId }: { repoId: string }) {
   const kiln = useKiln();
   const repo = allRepos(kiln).find((r) => r.id === repoId);
+  const live = useLiveRepoStats();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [clone, setClone] = useState<"git" | "https" | "cli">("git");
   if (!repo) return null;
+  const fixture = isFixtureRepo(repo);
+  const stats = liveStatsFor(repo, live);
+  const stars = fixture ? null : displayStars(repo, stats) + (kiln.stars[repo.id] ? 1 : 0);
+  const forks = fixture ? null : displayForks(repo, stats) + (kiln.forksOf.includes(repo.id) ? 1 : 0);
+  const watchers = fixture ? null : (stats?.watchers ?? repo.watchers) + (kiln.watches[repo.id] ? 1 : 0);
   const issues = allIssues(kiln).filter((i) => i.repoId === repo.id && i.state === "open").length;
   const pulls = allPulls(kiln).filter((p) => p.repoId === repo.id && p.state === "open").length;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -81,14 +88,24 @@ export function RepoHeader({ repoId }: { repoId: string }) {
             <span className="chip capitalize">{repo.visibility}</span>
             {repo.encrypted ? <span className="chip">sealed</span> : null}
             {repo.archived ? <span className="chip">archived</span> : null}
+            {fixture ? (
+              <span className="chip border-dashed text-subtle" title="Demo fixture — sample data for exploring the forge, not a real repository">
+                demo fixture
+              </span>
+            ) : stats ? (
+              <span className="flex items-center gap-1 text-[11px] font-normal text-seal" title={`Live from GitHub · fetched ${new Date(stats.fetchedAt).toLocaleDateString()}`}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-seal" />
+                live from GitHub
+              </span>
+            ) : null}
           </p>
-          <p className="mt-1 max-w-2xl text-sm text-muted">{repo.description}</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">{stats?.description || repo.description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn h-8" onClick={() => kiln.watchRepo(repo.id)}>
             <Eye className={cn("size-3.5", kiln.watches[repo.id] && "text-seal")} />
             {kiln.watches[repo.id] ? "Unwatch" : "Watch"}
-            <span className="tabular-nums text-muted">{repo.watchers + (kiln.watches[repo.id] ? 1 : 0)}</span>
+            {watchers !== null ? <span className="tabular-nums text-muted">{watchers}</span> : null}
           </button>
           <button
             type="button"
@@ -100,12 +117,12 @@ export function RepoHeader({ repoId }: { repoId: string }) {
           >
             <GitFork className="size-3.5" />
             Fork
-            <span className="tabular-nums text-muted">{repo.forks + (kiln.forksOf.includes(repo.id) ? 1 : 0)}</span>
+            {forks !== null ? <span className="tabular-nums text-muted">{forks}</span> : null}
           </button>
           <button type="button" className="btn h-8" onClick={() => kiln.star(repo.id)}>
             <Star className={cn("size-3.5", kiln.stars[repo.id] && "fill-fg")} />
             Star
-            <span className="tabular-nums text-muted">{starCount(repo, kiln)}</span>
+            {stars !== null ? <span className="tabular-nums text-muted">{stars}</span> : null}
           </button>
           <button type="button" className="btn h-8" onClick={() => kiln.sponsor(repo.id, 50)}>
             Sponsor
@@ -113,14 +130,20 @@ export function RepoHeader({ repoId }: { repoId: string }) {
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted">
-        <Link to="/$owner/$repo/stargazers" params={{ owner: repo.owner, repo: repo.name }} className="hover:text-fg">
-          {starCount(repo, kiln)} stars
-        </Link>
-        <Link to="/$owner/$repo/forks" params={{ owner: repo.owner, repo: repo.name }} className="hover:text-fg">
-          {repo.forks} forks
-        </Link>
+        {fixture ? (
+          <span className="text-subtle">sample data — star, fork and watcher counts are illustrative</span>
+        ) : (
+          <>
+            <Link to="/$owner/$repo/stargazers" params={{ owner: repo.owner, repo: repo.name }} className="hover:text-fg">
+              {stars} stars
+            </Link>
+            <Link to="/$owner/$repo/forks" params={{ owner: repo.owner, repo: repo.name }} className="hover:text-fg">
+              {forks} forks
+            </Link>
+          </>
+        )}
         <span className="tabular-nums">{formatKln(repo.tvlKln)} locked</span>
-        <span className="font-mono">{repo.chainAddress.slice(0, 10)}…</span>
+        <span className="font-mono" title="No KilnOwnershipRegistry deployment recorded — this repo is not anchored on-chain">{displayChain(repo)}</span>
         <Link to="/$owner/$repo/preview" params={{ owner: repo.owner, repo: repo.name }} className="font-mono text-seal hover:underline">
           {host}
         </Link>
@@ -332,13 +355,26 @@ export function LanguageBar({ langs }: { langs: Record<string, number> }) {
 
 export function About({ repo }: { repo: ReturnType<typeof allRepos>[number] }) {
   const kiln = useKiln();
+  const live = useLiveRepoStats();
+  const fixture = isFixtureRepo(repo);
+  const stats = liveStatsFor(repo, live);
   const releases = kiln.releases.filter((r) => r.repoId === repo.id);
   const packs = kiln.pages.find((p) => p.repoId === repo.id);
+  const shipaton = repo.id === "freddycreates/sovereign-engine";
   return (
     <aside className="space-y-4">
+      {shipaton && (
+        <div className="panel border-seal/40 p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-seal">Shipaton</p>
+          <p className="mt-2 text-sm font-medium">Sovereign Books substrate — shipping September 29, 2026.</p>
+          <Link to="/shipaton" className="mt-3 inline-block text-sm text-seal hover:underline">
+            Countdown &amp; readiness →
+          </Link>
+        </div>
+      )}
       <div className="panel p-4">
         <h3 className="text-sm font-medium">About</h3>
-        <p className="mt-2 text-sm text-muted">{repo.description}</p>
+        <p className="mt-2 text-sm text-muted">{stats?.description || repo.description}</p>
         {repo.website ? (
           <a href={repo.website} className="mt-2 block truncate text-sm text-seal hover:underline">
             {repo.website}
@@ -352,11 +388,17 @@ export function About({ repo }: { repo: ReturnType<typeof allRepos>[number] }) {
           ))}
         </div>
         <dl className="mt-4 space-y-1.5 text-xs text-muted">
-          <div className="flex justify-between"><dt>License</dt><dd className="text-fg">{repo.license}</dd></div>
-          <div className="flex justify-between"><dt>Default branch</dt><dd className="font-mono text-fg">{repo.defaultBranch}</dd></div>
-          <div className="flex justify-between"><dt>Stars</dt><dd className="tabular-nums text-fg">{starCount(repo, kiln)}</dd></div>
-          <div className="flex justify-between"><dt>Watchers</dt><dd className="tabular-nums text-fg">{repo.watchers}</dd></div>
-          <div className="flex justify-between"><dt>Forks</dt><dd className="tabular-nums text-fg">{repo.forks}</dd></div>
+          <div className="flex justify-between"><dt>License</dt><dd className="text-fg">{stats?.license || repo.license}</dd></div>
+          <div className="flex justify-between"><dt>Default branch</dt><dd className="font-mono text-fg">{stats?.defaultBranch || repo.defaultBranch}</dd></div>
+          {fixture ? (
+            <div className="flex justify-between"><dt>Data</dt><dd className="text-subtle">demo fixture</dd></div>
+          ) : (
+            <>
+              <div className="flex justify-between"><dt>Stars</dt><dd className="tabular-nums text-fg">{displayStars(repo, stats)}</dd></div>
+              <div className="flex justify-between"><dt>Watchers</dt><dd className="tabular-nums text-fg">{stats?.watchers ?? repo.watchers}</dd></div>
+              <div className="flex justify-between"><dt>Forks</dt><dd className="tabular-nums text-fg">{displayForks(repo, stats)}</dd></div>
+            </>
+          )}
           {releases[0] ? (
             <div className="flex justify-between">
               <dt>Latest</dt>
