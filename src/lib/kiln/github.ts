@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { langOf } from "./store";
 import type { Repo, RepoFile } from "./types";
 import { syncHash } from "@/lib/utils";
+import type { LiveRepoStats } from "./provenance";
 
 async function token(): Promise<string> {
   try {
@@ -149,6 +150,62 @@ export const githubImport = createServerFn({ method: "POST" })
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : "Import failed" };
     }
+  });
+
+/**
+ * Batch live stats for the forge's real repos.
+ *
+ * One round-trip for the whole explore page instead of N per-repo calls.
+ * Returns a map keyed by "owner/repo" (lowercased). Failures for individual
+ * repos resolve to null so one missing repo never breaks the page.
+ */
+export const githubRepoStatsBatch = createServerFn({ method: "POST" })
+  .inputValidator((d: { repos: { owner: string; repo: string }[] }) => d)
+  .handler(async ({ data }) => {
+    const seen = new Set<string>();
+    const targets = (data.repos || [])
+      .map((r) => ({ owner: String(r.owner || "").trim(), repo: String(r.repo || "").trim() }))
+      .filter((r) => r.owner && r.repo)
+      .filter((r) => {
+        const k = `${r.owner}/${r.repo}`.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .slice(0, 40);
+    const out: Record<string, LiveRepoStats | null> = {};
+    await Promise.all(
+      targets.map(async ({ owner, repo }) => {
+        const key = `${owner}/${repo}`.toLowerCase();
+        try {
+          const res = await gh(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+          if (!res.ok) {
+            out[key] = null;
+            return;
+          }
+          const r = res.data as Record<string, unknown>;
+          out[key] = {
+            stars: Number(r.stargazers_count || 0),
+            forks: Number(r.forks_count || 0),
+            watchers: Number(r.watchers_count || 0),
+            openIssues: Number(r.open_issues_count || 0),
+            description: String(r.description || ""),
+            language: String(r.language || ""),
+            topics: (r.topics as string[]) || [],
+            license:
+              ((r.license as { spdx_id?: string } | null)?.spdx_id ||
+                (r.license as { name?: string } | null)?.name ||
+                "") as string,
+            pushedAt: String(r.pushed_at || ""),
+            defaultBranch: String(r.default_branch || "main"),
+            fetchedAt: new Date().toISOString(),
+          };
+        } catch {
+          out[key] = null;
+        }
+      }),
+    );
+    return { ok: true as const, stats: out };
   });
 
 export const studioGenerate = createServerFn({ method: "POST" })

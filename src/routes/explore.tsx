@@ -1,20 +1,69 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { VideoFrame } from "@/components/VideoFrame";
-import { allRepos, allTopics, starCount, useKiln } from "@/lib/kiln/store";
+import { allRepos, allTopics, useKiln } from "@/lib/kiln/store";
+import { isFixtureRepo, displayStars } from "@/lib/kiln/provenance";
+import { useLiveRepoStats, liveStatsFor } from "@/lib/kiln/use-live-stats";
+import type { Repo } from "@/lib/kiln/types";
 
 export const Route = createFileRoute("/explore")({
   validateSearch: (s: Record<string, unknown>) => ({ q: String(s.q ?? "") }),
   component: Explore,
 });
 
+function RepoRow({ r, live }: { r: Repo; live: ReturnType<typeof useLiveRepoStats> }) {
+  const fixture = isFixtureRepo(r);
+  const stats = liveStatsFor(r, live);
+  return (
+    <li className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
+      <div className="min-w-0">
+        <span className="flex flex-wrap items-center gap-2">
+          <Link to="/$owner/$repo" params={{ owner: r.owner, repo: r.name }} className="font-mono text-sm hover:text-seal">
+            {r.owner}/{r.name}
+          </Link>
+          {fixture ? (
+            <span className="chip border-dashed text-subtle" title="Demo fixture — sample data, not a real repository">
+              demo
+            </span>
+          ) : stats ? (
+            <span className="flex items-center gap-1 text-[11px] text-seal" title={`Live from GitHub · fetched ${new Date(stats.fetchedAt).toLocaleDateString()}`}>
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-seal" />
+              live
+            </span>
+          ) : null}
+        </span>
+        <p className="mt-1 max-w-2xl text-sm text-muted">{stats?.description || r.description}</p>
+        <p className="mt-2 flex flex-wrap gap-2 text-[11px] text-subtle">
+          <span>{stats?.language || r.language}</span>
+          {(stats?.topics?.length ? stats.topics : r.topics).slice(0, 4).map((t) => (
+            <span key={t} className="chip">
+              {t}
+            </span>
+          ))}
+        </p>
+      </div>
+      {fixture ? (
+        <p className="text-[11px] uppercase tracking-wider text-subtle">sample data</p>
+      ) : (
+        <p className="tabular-nums text-sm text-muted">{displayStars(r, stats)} stars</p>
+      )}
+    </li>
+  );
+}
+
 function Explore() {
   const { q } = Route.useSearch();
   const kiln = useKiln();
+  const live = useLiveRepoStats();
   const t = q.trim().toLowerCase();
-  const repos = allRepos(kiln)
-    .filter((r) => r.visibility === "public")
-    .filter((r) => !t || `${r.id} ${r.description} ${r.language} ${r.topics.join(" ")}`.toLowerCase().includes(t))
-    .sort((a, b) => starCount(b, kiln) - starCount(a, kiln));
+  const matches = (r: Repo) =>
+    r.visibility === "public" &&
+    (!t || `${r.id} ${r.description} ${r.language} ${r.topics.join(" ")}`.toLowerCase().includes(t));
+  const real = allRepos(kiln)
+    .filter((r) => matches(r) && !isFixtureRepo(r))
+    .sort((a, b) => displayStars(b, live.get(b.id)) - displayStars(a, live.get(a.id)));
+  const fixtures = allRepos(kiln)
+    .filter((r) => matches(r) && isFixtureRepo(r))
+    .sort((a, b) => a.id.localeCompare(b.id));
   return (
     <div>
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
@@ -58,26 +107,21 @@ function Explore() {
         ))}
       </div>
       <ul className="mt-6 divide-y divide-border rounded-xl border border-border">
-        {repos.map((r) => (
-          <li key={r.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
-            <div className="min-w-0">
-              <Link to="/$owner/$repo" params={{ owner: r.owner, repo: r.name }} className="font-mono text-sm hover:text-seal">
-                {r.owner}/{r.name}
-              </Link>
-              <p className="mt-1 max-w-2xl text-sm text-muted">{r.description}</p>
-              <p className="mt-2 flex flex-wrap gap-2 text-[11px] text-subtle">
-                <span>{r.language}</span>
-                {r.topics.slice(0, 4).map((t) => (
-                  <span key={t} className="chip">
-                    {t}
-                  </span>
-                ))}
-              </p>
-            </div>
-            <p className="tabular-nums text-sm text-muted">{starCount(r, kiln)} stars</p>
-          </li>
+        {real.map((r) => (
+          <RepoRow key={r.id} r={r} live={live} />
         ))}
       </ul>
+      {fixtures.length > 0 && (
+        <>
+          <h2 className="mt-10 text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Demo fixtures</h2>
+          <p className="mt-1 text-sm text-subtle">Sample repositories for exploring the forge offline — not real projects.</p>
+          <ul className="mt-4 divide-y divide-border rounded-xl border border-dashed border-border">
+            {fixtures.map((r) => (
+              <RepoRow key={r.id} r={r} live={live} />
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

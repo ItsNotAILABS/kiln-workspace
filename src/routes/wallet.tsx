@@ -16,6 +16,7 @@ function WalletPage() {
         <button type="button" className="btn mt-4 h-9" onClick={() => useKiln.setState({ balance: kiln.balance + 250 })}>
           Faucet 250 KLN
         </button>
+        <p className="mt-2 text-[11px] text-subtle">Demo wallet — the faucet mints local play KLN, not on-chain funds.</p>
       </div>
     </div>
   );
