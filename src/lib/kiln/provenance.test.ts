@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isFixtureRepo, displayStars, displayForks, chainState, displayChain, type LiveRepoStats } from "./provenance.ts";
+import { isFixtureRepo, displayStars, displayForks, chainState, displayChain, recordedDeployments, type LiveRepoStats } from "./provenance.ts";
 import type { Repo } from "./types.ts";
 
 const live: LiveRepoStats = {
@@ -66,6 +66,36 @@ describe("chain anchoring", () => {
       assert.equal(s.anchored, false, id);
       assert.equal(displayChain({ owner } as Repo), "not anchored");
     }
+  });
+
+  it("reports anchored with the recorded address once a deployment exists", () => {
+    const snapshot = {
+      deployments: {
+        sepolia: { address: "0x1234567890abcdef1234567890abcdef12345678", chainId: 11155111 },
+      },
+    };
+    const s = chainState({ owner: "ItsNotAILABS" } as Repo, snapshot);
+    assert.equal(s.anchored, true);
+    if (s.anchored) {
+      assert.equal(s.address, "0x1234567890abcdef1234567890abcdef12345678");
+      assert.equal(s.network, "sepolia");
+    }
+    assert.equal(displayChain({ owner: "ItsNotAILABS" } as Repo, snapshot), "0x12345678…");
+  });
+
+  it("ignores deployment entries without a plausible address", () => {
+    const snapshot = { deployments: { sepolia: { address: "TBD" } } };
+    assert.deepEqual(recordedDeployments(snapshot), []);
+    assert.equal(chainState({ owner: "x" } as Repo, snapshot).anchored, false);
+  });
+
+  it("tolerates the array snapshot shape too", () => {
+    const snapshot = {
+      deployments: [{ network: "mainnet", address: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd" }],
+    };
+    const s = chainState({ owner: "x" } as Repo, snapshot);
+    assert.equal(s.anchored, true);
+    if (s.anchored) assert.equal(s.network, "mainnet");
   });
 });
 describe("display stats", () => {
