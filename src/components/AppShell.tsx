@@ -19,7 +19,6 @@ const PALETTE = [
   { id: "assistants", group: "Platform", label: "Coding assistants", href: "/assistants" },
   { id: "marketplace", group: "Platform", label: "Marketplace", href: "/marketplace" },
   { id: "orgs", group: "Platform", label: "Organizations", href: "/orgs" },
-  { id: "workspaces", group: "Platform", label: "Workspaces", href: "/workspaces" },
   { id: "apps", group: "Platform", label: "Apps & add-ons", href: "/apps" },
   { id: "gists", group: "Platform", label: "Gists", href: "/gists" },
   { id: "cloud", group: "Platform", label: "Encrypted cloud", href: "/cloud" },
@@ -60,9 +59,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [kiln]);
 
-  // Note: no auto-connect here. A null wallet is a real, supported state
-  // (header Connect button, /account connect form). Auto-connecting "you"
-  // made Disconnect a no-op and the custom-handle form unreachable.
+  useEffect(() => {
+    if (kiln.hydrated && !kiln.wallet) kiln.connect("you");
+  }, [kiln.hydrated, kiln.wallet, kiln]);
 
   useEffect(() => {
     const onPalette = () => setPalette(true);
