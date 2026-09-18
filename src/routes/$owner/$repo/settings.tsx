@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { findRepo, kilnHost, useKiln } from "@/lib/kiln/store";
+import { AgentGrantsPanel } from "@/components/AgentGrantsPanel";
 
 export const Route = createFileRoute("/$owner/$repo/settings")({
   component: Settings,
@@ -11,7 +12,7 @@ function Settings() {
   const kiln = useKiln();
   const nav = useNavigate();
   const repo = findRepo(kiln, owner, name);
-  const [section, setSection] = useState<"general" | "access" | "branches" | "webhooks" | "pages" | "secrets" | "danger">("general");
+  const [section, setSection] = useState<"general" | "access" | "agents" | "branches" | "webhooks" | "pages" | "secrets" | "danger">("general");
   const [description, setDescription] = useState(repo?.description ?? "");
   const [website, setWebsite] = useState(repo?.website ?? "");
   const [topics, setTopics] = useState(repo?.topics.join(", ") ?? "");
@@ -27,6 +28,7 @@ function Settings() {
   const navItems = [
     ["general", "General"],
     ["access", "Collaborators"],
+    ["agents", "Agent capabilities"],
     ["branches", "Branches"],
     ["webhooks", "Webhooks"],
     ["pages", "Pages"],
@@ -100,6 +102,7 @@ function Settings() {
             </form>
           </section>
         ) : null}
+        {section === "agents" ? <AgentGrantsPanel owner={owner} repo={name} /> : null}
         {section === "branches" ? (
           <section className="panel space-y-3 p-5">
             <h2 className="font-display text-2xl">Branches</h2>
