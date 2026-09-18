@@ -35,6 +35,7 @@ import { Route as ShipatonRouteImport } from './routes/shipaton'
 import { Route as StarsRouteImport } from './routes/stars'
 import { Route as StartRouteImport } from './routes/start'
 import { Route as StudioRouteImport } from './routes/studio'
+import { Route as SwarmRouteImport } from './routes/swarm'
 import { Route as TrendingRouteImport } from './routes/trending'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as OwnerIndexRouteImport } from './routes/$owner/index'
@@ -204,6 +205,11 @@ const StartRoute = StartRouteImport.update({
 const StudioRoute = StudioRouteImport.update({
   id: '/studio',
   path: '/studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SwarmRoute = SwarmRouteImport.update({
+  id: '/swarm',
+  path: '/swarm',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrendingRoute = TrendingRouteImport.update({
@@ -434,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
+  '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
@@ -502,6 +509,7 @@ export interface FileRoutesByTo {
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
+  '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
   '/gists/$id': typeof GistsIdRoute
@@ -570,6 +578,7 @@ export interface FileRoutesById {
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
+  '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
@@ -640,6 +649,7 @@ export interface FileRouteTypes {
     | '/stars'
     | '/start'
     | '/studio'
+    | '/swarm'
     | '/trending'
     | '/wallet'
     | '/$owner/$repo'
@@ -708,6 +718,7 @@ export interface FileRouteTypes {
     | '/stars'
     | '/start'
     | '/studio'
+    | '/swarm'
     | '/trending'
     | '/wallet'
     | '/gists/$id'
@@ -775,6 +786,7 @@ export interface FileRouteTypes {
     | '/stars'
     | '/start'
     | '/studio'
+    | '/swarm'
     | '/trending'
     | '/wallet'
     | '/$owner/$repo'
@@ -844,6 +856,7 @@ export interface RootRouteChildren {
   StarsRoute: typeof StarsRoute
   StartRoute: typeof StartRoute
   StudioRoute: typeof StudioRoute
+  SwarmRoute: typeof SwarmRoute
   TrendingRoute: typeof TrendingRoute
   WalletRoute: typeof WalletRoute
   OwnerRepoRoute: typeof OwnerRepoRouteWithChildren
@@ -1033,6 +1046,13 @@ declare module '@tanstack/react-router' {
       path: '/studio'
       fullPath: '/studio'
       preLoaderRoute: typeof StudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/swarm': {
+      id: '/swarm'
+      path: '/swarm'
+      fullPath: '/swarm'
+      preLoaderRoute: typeof SwarmRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trending': {
@@ -1453,6 +1473,7 @@ const rootRouteChildren: RootRouteChildren = {
   StarsRoute: StarsRoute,
   StartRoute: StartRoute,
   StudioRoute: StudioRoute,
+  SwarmRoute: SwarmRoute,
   TrendingRoute: TrendingRoute,
   WalletRoute: WalletRoute,
   OwnerRepoRoute: OwnerRepoRouteWithChildren,
