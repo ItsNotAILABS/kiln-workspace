@@ -1,0 +1,32 @@
+name: KILN Governed Execution
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/kiln-governance.mjs'
+      - 'scripts/kiln-governance-smoke.mjs'
+      - 'scripts/kiln-infra.mjs'
+      - 'scripts/agent-turn.mjs'
+      - '.github/workflows/kiln-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governance-invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check scripts/kiln-governance.mjs
+          node --check scripts/kiln-infra.mjs
+          node --check scripts/kiln-governance-smoke.mjs
+      - name: Run research-derived governance invariants
+        run: node scripts/kiln-governance-smoke.mjs
+      - name: Public credential regression check
+        run: node scripts/security-invariants.mjs
