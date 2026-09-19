@@ -235,7 +235,33 @@ routes 200, assets 200 at seal `k=35`, `/` rendered in-browser with zero page
 errors. Final gates: 317 tests (309 pass, 0 fail, 8 honest skips), `tsc`
 clean, KILN swarm suite 75/75.
 
-## Follow-ups not covered
+## E. Dogfood tickets (filed by the architect while using KILN)
+
+### E1 — `swarm.mjs repo list`/`create` fail with bare "fetch failed" when the daemon isn't running (Medium) — **FIXED 2026-09-19**
+- **Reported:** While dogfooding KILN-native git hosting, `swarm.mjs repo
+  list`/`create` printed only `error: fetch failed` (exit 1) when the daemon
+  wasn't running — no indication of what was wrong or how to fix it.
+- **Reproduced:** Scratch state dir with `daemon.json` pointing at a dead
+  port → exact `error: fetch failed`, exit 1, for both commands.
+- **Fix (in the KILN repo, `swarm/swarm.mjs`):**
+  - `apiCall` now translates connection-level fetch failures
+    (ECONNREFUSED/ENOTFOUND/EHOSTUNREACH/…) into a `DaemonDownError` carrying
+    an actionable message: never-started → "swarm daemon is not running (no
+    answer at <url>). start it with: node swarm.mjs daemon start";
+    pid recorded but port dead → "not responding … it may have died" variant.
+  - `repo list`/`create` fall back to the local state dir when the daemon is
+    down. This is safe because the daemon's own create/list paths are
+    literally the same `lib/git.mjs` functions (`createRepo`/`listRepos`)
+    — a locally-created repo is served identically once the daemon starts.
+    The CLI says so explicitly, prints the clone URL (valid once the daemon
+    is up), and the start hint.
+  - Duplicate create still fails honestly (`repo exists: …`); invalid names
+    still rejected — never "fetch failed".
+- **Verified:** New `swarm/test/daemon-down.test.mjs` (6 tests, real CLI
+  subprocesses against scratch dirs, dead-port daemon.json, with and without
+  recorded pid) — 6/6 pass; full swarm suite 81/81.
+- **Committed:** locally in the KILN repo; not pushed (needs architect's
+  repo+branch call per standing rule).
 - The public deployment is still stale (A1) — redeploy `main` so the fixes in
   this pass reach real users.
 - Owner-gated chain work remains unimplemented until real decisions and
