@@ -1,9 +1,15 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { allRepos, profileOf, starCount, useKiln } from "@/lib/kiln/store";
+import { isReservedOwnerName } from "@/lib/kiln/reserved";
 import { SEED_PACKAGES, SEED_PROFILES } from "@/lib/kiln/seed";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/$owner/")({
+  beforeLoad: ({ params }) => {
+    // Reserved top-level route names (signin, settings, …) must never render
+    // as fabricated user profiles.
+    if (isReservedOwnerName(params.owner)) throw notFound();
+  },
   validateSearch: (s: Record<string, unknown>) => ({ tab: String(s.tab ?? "overview") }),
   component: ProfilePage,
 });
