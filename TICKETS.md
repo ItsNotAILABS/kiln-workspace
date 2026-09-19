@@ -10,6 +10,13 @@ account/wallet connect-disconnect, swarm console (spawn, job, receipts),
 KILN-native git clone/push — with Playwright against the dev server. Every
 reproducible defect was repaired in the same pass (Section D).
 
+Updated 2026-09-19 (swarm E3 pass): dogfood tickets E1 (daemon-down UX, fixed)
+and E3 (smart-HTTP self-deadlock, fixed — Critical). Swarm suite 92/92 green;
+SDK-only agent loop verified end-to-end (clone→compute→commit→push→receipts→
+independent clone); persistent auro worker revived KILN-native with
+policy=always; capability exercises green (release refused without cap,
+release succeeds with cap).
+
 **Important context:** the public deployment is stale (Section A1). Findings in
 Section A were re-verified against current source and are fix-ready. Findings in
 Section B were observed on the public build and must be re-reproduced on a
@@ -267,3 +274,71 @@ clean, KILN swarm suite 75/75.
 - Owner-gated chain work remains unimplemented until real decisions and
   credentials exist (KILN_MIND_URL, chain/testnet selection, deployer key,
   real KilnOwnershipRegistry deployment).
+
+### E3 — Swarm daemon self-deadlocks when a node clones a KILN-native repo hosted by the same daemon (Critical) — **FIXED 2026-09-19**
+- **Reported:** While dogfooding the agent-offload path ("agents like you
+  should be able to use this platform to buffer out computing through the
+  swarms"), `SwarmClient.spawnNode({ repo: <KILN-native URL> })` timed out:
+  the worker's `git clone` never completed. `/health` and `/jobs` stayed up
+  at first, but every smart-HTTP clone hung and the daemon's event loop
+  froze until the clone timed out.
+- **Reproduced:** A scratch daemon hosting a real KILN-native repo; a node
+  spawned with `repo:` set to that daemon's own smart-HTTP URL hung in
+  `git clone` indefinitely (had to be killed), while `/health` stopped
+  responding for the clone's duration.
+- **Root cause (in the KILN repo, `swarm/lib/nodes.mjs`):** `createNode()`
+  ran the initial clone with synchronous `spawnSync("git", ["clone", …],
+  { timeout: 120000 })`. When the repo was hosted by the SAME daemon, the
+  clone's own smart-HTTP requests (`GET /git/<owner>/<repo>/info/refs`)
+  needed the daemon's event loop — which was blocked inside the synchronous
+  clone. Deterministic self-deadlock: the clone could only finish when the
+  120s timeout killed it.
+- **Fix (in the KILN repo):**
+  - `swarm/lib/nodes.mjs`: `createNode` is now `async`; the clone runs via
+    `spawn()` with an explicit timer so the event loop stays live to serve
+    the clone's own HTTP requests. Failed clones remove their partial node
+    directory (previously they left orphans that spammed `ENOENT` on every
+    daemon tick — orphaned partial dirs from the failed attempts were also
+    cleaned up by hand).
+  - `swarm/lib/httpapi.mjs`, `swarm/lib/tools.mjs`, `swarm/swarm.mjs`: all
+    `createNode` callers converted to `await`; daemon autospawn gained an
+    in-flight guard so two ticks can't create the same node twice while a
+    clone is pending.
+  - New regression `swarm/test/git-self-clone.test.mjs`: creates a REAL
+    KILN-native repo on a scratch daemon, seeds it through authenticated
+    git push, spawns a node cloning from the same daemon, polls `/health`
+    DURING the clone, and verifies the cloned file. Passes in ~1.5s with
+    no event-loop stall.
+- **Follow-on found while verifying (same pass):** workers could `git.commit`
+  but had no way to publish — no `git.push` tool existed, so the
+  "independently clone and verify" story stopped at the worker's workdir.
+  Added `git.push` (`swarm/lib/tools.mjs`, grant-gated by CAP_COMMIT like
+  `git.commit`): pushes `HEAD` to the cloned KILN-native remote, auth via
+  the daemon's bearer token injected as a one-shot git `http.extraHeader`
+  env — the token never touches the workdir, the job plan, or logs
+  (asserted in tests: token absent from push output and `.git/config`).
+  New `swarm/test/tools.test.mjs` cases: refused without CAP_COMMIT (and
+  pushes nothing), real push to a bare remote lands the commit, illegal
+  remote names rejected. 3/3 pass.
+- **Verified:**
+  - Full swarm suite: 92/92 pass (89 existing + 3 new `git.push`), 0 fail.
+  - SDK-only end-to-end (`swarm/examples/agent-e2e.mjs`): connect →
+    createRepo → spawnNode (native clone, no deadlock) → worker computes
+    sum(1..1000)=500500 for real → git.commit → git.push → signed receipts
+    verify (5/5, allOk) → independent fresh `git clone` shows commit with
+    `SUM.md` = 500500. Green.
+  - Persistent auro worker revived as a KILN-native piece of Auro:
+    `policy: "always"`, workdir re-cloned from `auro/auro` on KILN-native,
+    delegated a real beacon job via SDK only (write → commit → push),
+    independently verified on the native remote.
+  - Capability exercises: `project.release` on a CAP_COMMIT-only node is
+    refused honestly (`needs [release]`); on the release-capable auro node
+    a real release script runs with a real effect.
+- **Docs:** `swarm/AGENTS.md` (the agent operator manual: SDK connection,
+  the agent loop, `depositCode`, KILN-native git, persistent workers, the
+  non-negotiable rules) updated with `git.push` and the jail-correct
+  `fs.write`-then-execute pattern (the shell jail denies `;`, `..`, `$()`
+  etc. — inline `-e` scripts with those characters fail loudly; the guide
+  now teaches the intended pattern).
+- **Committed:** locally in the KILN repo (explicit paths only); not pushed
+  (needs architect's repo+branch call per standing rule).
