@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { toast } from "sonner";
 import { syncHash } from "@/lib/utils";
+import { isKnownOwnerName } from "./reserved";
 import type {
   ActionRun,
   Agent,
@@ -303,6 +304,20 @@ export function profileOf(handle: string): Profile {
       pinned: [],
     }
   );
+}
+
+/**
+ * True when `handle` identifies a real forge identity: a seeded profile, an
+ * owner of a known repository (seed or user-created), or the connected wallet.
+ * Anything else must NOT render as a profile — `/$owner/` shows the not-found
+ * page instead (a fabricated "A kiln member." identity is not honest).
+ */
+export function isKnownOwner(s: Pick<KilnState, "extraRepos" | "wallet">, handle: string): boolean {
+  return isKnownOwnerName(handle, {
+    seedHandles: Object.keys(SEED_PROFILES).map((h) => h.toLowerCase()),
+    repoOwners: allRepos(s).map((r) => r.owner.toLowerCase()),
+    walletHandle: s.wallet ? s.wallet.handle.toLowerCase() : null,
+  });
 }
 
 export const useKiln = create<KilnState>()(
