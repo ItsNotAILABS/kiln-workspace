@@ -50,3 +50,29 @@ export const RESERVED_OWNER_NAMES: ReadonlySet<string> = new Set([
 export function isReservedOwnerName(handle: string): boolean {
   return RESERVED_OWNER_NAMES.has(handle.toLowerCase());
 }
+
+/**
+ * Identity evidence for `isKnownOwnerName`, kept as plain data so this module
+ * stays a dependency-free leaf (importable under plain node --test).
+ */
+export interface KnownOwnerInfo {
+  /** Lowercase handles of seeded profiles. */
+  seedHandles: string[];
+  /** Lowercase owner names of known repositories (seed + user-created). */
+  repoOwners: string[];
+  /** Lowercase connected wallet handle, if any. */
+  walletHandle: string | null;
+}
+
+/**
+ * True when `handle` identifies a real forge identity rather than an arbitrary
+ * string. Anything else must NOT render as a profile — `/$owner/` shows the
+ * not-found page instead (a fabricated "A kiln member." identity is not honest).
+ */
+export function isKnownOwnerName(handle: string, known: KnownOwnerInfo): boolean {
+  const lower = handle.toLowerCase();
+  if (known.seedHandles.includes(lower)) return true;
+  if (known.repoOwners.includes(lower)) return true;
+  if (known.walletHandle !== null && known.walletHandle === lower) return true;
+  return false;
+}
