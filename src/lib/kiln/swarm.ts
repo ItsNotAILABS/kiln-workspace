@@ -8,6 +8,7 @@ import {
   stopSwarmNode,
   getSwarmNodeLogs,
   verifySwarmReceipts,
+  listGitRepos,
   SwarmDownError,
   type SpawnNodeInput,
   type SubmitJobInput,
@@ -91,8 +92,15 @@ export const swarmVerifyReceipts = createServerFn({ method: "POST" })
     }
   });
 
-function fail(e: unknown) {
-  const err = e as Error & { fix?: string };
+export const swarmGitRepos = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    return { ok: true as const, repos: await listGitRepos() };
+  } catch (e) {
+    return fail(e);
+  }
+});
+
+function fail(e: unknown) {  const err = e as Error & { fix?: string };
   const out: { ok: false; error: string; fix?: string } = {
     ok: false as const,
     error: err instanceof Error ? err.message : "swarm request failed",
