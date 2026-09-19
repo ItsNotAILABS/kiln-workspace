@@ -247,3 +247,38 @@ export async function verifySwarmReceipts(
   })) as { results: ReceiptResult[]; allOk: boolean };
   return { results: data.results ?? [], allOk: !!data.allOk };
 }
+
+/** Mirrors the daemon's git repo record (see swarm/lib/git.mjs listRepos). */
+export interface GitRepoView {
+  owner: string;
+  repo: string;
+  createdAt: string;
+  /** Usable clone URL against this daemon. */
+  cloneUrl: string;
+}
+
+/**
+ * KILN-native git repos hosted by the daemon. GET /git is a PUBLIC route —
+ * no token is needed and none is sent, so this works even before init.
+ * Push/create stay authenticated on the daemon itself.
+ */
+export async function listGitRepos(): Promise<GitRepoView[]> {
+  const apiUrl = daemonApiUrl();
+  let res: Response;
+  try {
+    res = await fetch(`${apiUrl}/git`, { signal: AbortSignal.timeout(15000) });
+  } catch {
+    throw new SwarmDownError("cannot reach the swarm daemon API — it may be down");
+  }
+  const data = (await res.json().catch(() => ({}))) as {
+    repos?: { owner: string; repo: string; createdAt: string }[];
+  };
+  if (!res.ok) throw new Error(`swarm API HTTP ${res.status}`);
+  const repos = Array.isArray(data.repos) ? data.repos : [];
+  return repos.map((r) => ({
+    owner: r.owner,
+    repo: r.repo,
+    createdAt: r.createdAt,
+    cloneUrl: `${apiUrl}/git/${r.owner}/${r.repo}`,
+  }));
+}
