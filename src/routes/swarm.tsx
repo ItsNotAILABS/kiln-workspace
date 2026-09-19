@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   swarmDaemonStatus,
+  swarmGitRepos,
   swarmJobs,
   swarmNodeLogs,
   swarmNodes,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/kiln/swarm";
 import { SWARM_TEMPLATES } from "@/lib/kiln/swarm-templates";
 import type {
+  GitRepoView,
   ReceiptResult,
   SwarmDaemonStatus,
   SwarmJobView,
@@ -43,6 +45,7 @@ function SwarmConsole() {
   const [daemon, setDaemon] = useState<SwarmDaemonStatus | null>(null);
   const [nodes, setNodes] = useState<SwarmNodeView[]>([]);
   const [jobs, setJobs] = useState<SwarmJobView[]>([]);
+  const [repos, setRepos] = useState<GitRepoView[]>([]);
   const [note, setNote] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -56,6 +59,8 @@ function SwarmConsole() {
     if (n && n.ok) setNodes(n.nodes);
     else if (n && !n.ok) setNote(`nodes: ${n.error}${n.fix ? ` — ${n.fix}` : ""}`);
     if (j && j.ok) setJobs(j.jobs);
+    const g = await swarmGitRepos().catch(() => null);
+    if (g && g.ok) setRepos(g.repos);
   }, []);
 
   useEffect(() => {
@@ -80,6 +85,7 @@ function SwarmConsole() {
       )}
 
       <DaemonCard daemon={daemon} />
+      <GitReposPanel repos={repos} />
       <NodeGrid nodes={nodes} onChange={refresh} />
       <LogViewer nodes={nodes} />
       <JobPanel jobs={jobs} onChange={refresh} />
@@ -123,6 +129,38 @@ function DaemonCard({ daemon }: { daemon: SwarmDaemonStatus | null }) {
         </div>
       )}
     </div>
+  );
+}
+
+function GitReposPanel({ repos }: { repos: GitRepoView[] }) {
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-2xl">KILN-native repos</h2>
+      <p className="mt-2 max-w-xl text-sm text-muted">
+        Git repositories hosted by this daemon itself — real bare repos served over
+        smart HTTP. Cloning and fetching are public; creating and pushing need the
+        daemon token.
+      </p>
+      {repos.length === 0 && (
+        <p className="mt-3 text-sm text-muted">No repos yet — create one from the swarm CLI.</p>
+      )}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {repos.map((r) => (
+          <div key={`${r.owner}/${r.repo}`} className="panel p-5">
+            <p className="font-mono font-medium">
+              {r.owner}/{r.repo}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              created {new Date(r.createdAt).toLocaleString()}
+            </p>
+            <p className="mt-3 text-[11px] uppercase tracking-widest text-muted">Clone</p>
+            <code className="mt-1 block overflow-x-auto rounded-lg bg-black/40 p-2 font-mono text-xs">
+              git clone {r.cloneUrl}
+            </code>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
