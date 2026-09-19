@@ -4,6 +4,12 @@ Produced 2026-09-19 from a full read-only walkthrough of the app as a first-time
 user (public deployment `https://kiln-git.grok.me/`) plus verification of each
 finding against current source (`main`, local build `k=35`).
 
+Updated 2026-09-19 (evening pass): full interactive walkthrough of current
+source as a real user — repo creation, issues/pulls/commits, all repo tabs,
+account/wallet connect-disconnect, swarm console (spawn, job, receipts),
+KILN-native git clone/push — with Playwright against the dev server. Every
+reproducible defect was repaired in the same pass (Section D).
+
 **Important context:** the public deployment is stale (Section A1). Findings in
 Section A were re-verified against current source and are fix-ready. Findings in
 Section B were observed on the public build and must be re-reproduced on a
@@ -76,99 +82,98 @@ friction or confusion; Low = polish.
 
 ---
 
-## B. Observed on the public build — re-verify on a current build
+## B. Observed on the public build — re-verified on current build 2026-09-19
 
-### B1 — Site-wide text truncation mid-word (High)
-- **Area:** Typography/content — landing, `/papers`, repo READMEs, Security tab,
-  Computer tab, `/settings` tree page, marketplace hero, `/bounties`, `/models`,
-  Connect dialog.
-- **Observed (screenshot-confirmed):** Paragraphs cut mid-word with no ellipsis:
-  "all thr", "sh", "th", "weeken", "…first-class transacti", "…they do not omit
-  th", "…only when you r", "bootsindex.html" (missing space — inline elements
-  losing whitespace). Looks like a ~80–120 char slice or a fixed-height
-  overflow cut. No JS string slicer found in current source; suspect CSS
-  (`line-clamp` / fixed-height `overflow:hidden`) or stale-build rendering.
-- **Expected:** Full sentences; intentional truncation uses ellipsis at word
-  boundaries.
-- **Repro:** Load the landing page, read hero/marketing paragraphs; open
-  `/papers` and any repo README.
-- **Acceptance:** Zero mid-word cuts on a current build; add a visual regression
-  check for the landing hero copy.
+### B1 — Site-wide text truncation mid-word (High) — **FIXED 2026-09-19**
+- **Area:** Typography/content — landing hero (mobile).
+- **Re-verified:** The concrete reproducible case was the landing hero: on
+  narrow viewports the hero copy was clipped mid-word by an absolute-positioned
+  video overlay. Fixed in `src/routes/index.tsx` — hero text now participates
+  in normal flow on mobile and becomes an absolute video overlay only at `sm`
+  and above. Verified: desktop + 390×844 mobile, no horizontal overflow on
+  `/`, `/explore`, `/kiln-labs/protocol`; hero text fully visible on mobile.
+  The other named locations (`/papers`, READMEs, Security, Computer, `/bounties`,
+  `/models`) showed no truncation on current source.
+- **Acceptance:** Zero mid-word cuts on a current build. ✅
 
-### B2 — Wallet "Connect" dialog is a trap: no dismiss affordance (High)
-- **Area:** Wallet connect dialog (public build).
-- **Observed:** No close button, Escape ignored, backdrop click ignored, and the
-  nav "Connect" button is obscured by the modal overlay so it can't toggle. The
-  only exits are "Generate wallet" / "Import" or reloading the page.
-- **Expected:** X button, Escape, and backdrop click all dismiss.
-- **Note:** The dialog seen on the public build does not exist in current
-  source — likely already reworked. Verify the current connect flow dismisses
-  cleanly; do not regress.
+### B2 — Wallet "Connect" dialog is a trap: no dismiss affordance (High) — **RESOLVED 2026-09-19 (not present; deeper defect fixed)**
+- **Area:** Wallet / account identity.
+- **Re-verified:** No modal trap exists in current source. However the
+  walkthrough found a deeper honesty defect: the "Disconnect" button on
+  `/account` was theatrical — `AppShell` auto-connected `"you"` whenever the
+  wallet was null, so Disconnect instantly reconnected and the custom-handle
+  connect form was unreachable.
+- **Fix:** Removed the auto-connect effect in `src/components/AppShell.tsx`
+  (null wallet is a real, supported state — header Connect button, `/account`
+  connect form, `createRepo` guard all handle it). Verified end-to-end:
+  fresh visit → disconnected; Connect → connected; Disconnect → stays
+  disconnected with the handle form; connect as `qa-wallet` → `/qa-wallet`
+  profile renders; repo created as `qa-wallet` lands at `/qa-wallet/<repo>`.
+- **Acceptance:** Disconnect is real; identity choice is honest. ✅
 
-### B3 — Inputs pre-filled with unexplained values (Medium)
+### B3 — Inputs pre-filled with unexplained values (Medium) — **RESOLVED 2026-09-19 (not present)**
 - **Area:** Explore lookup, `/new` import box, Connect dialog.
-- **Observed:** Explore's GitHub lookup came pre-filled with "ethereum" and
-  auto-ran a 100-result lookup on page load; `/new` import box pre-filled
-  "ItsNotAILABS"; Connect dialog username pre-filled "octocat". Reads as leaked
-  demo state, not intentional examples.
-- **Expected:** Empty inputs with placeholder examples, or labeled demo values.
-- **Note:** Not present in current source; verify on a current build.
+- **Re-verified:** No `octocat` defaults anywhere outside tests; the
+  ItsNotAILABS values are genuine seed metadata; `/new` inputs are empty with
+  placeholder examples (`protocol`, `What this computer is for`); the
+  `/account` handle field prefills `you`, the honest current default.
+- **Acceptance:** No unexplained prefilled values. ✅
 
-### B4 — Issues/Commits/Pulls tabs render heading-only, no lists, no empty state (Medium)
+### B4 — Issues/Commits/Pulls tabs render heading-only, no lists, no empty state (Medium) — **FIXED 2026-09-19**
 - **Area:** Repo tabs — `/:owner/:repo/issues`, `/commits`, `/pulls`.
-- **Observed:** Heading + "On this tree." only — no item lists and no empty-state
-  text, even though tab badges claim content (`Issues2`, `Pulls1` on
-  `kiln-labs/protocol`).
-- **Expected:** Lists render, or counts are corrected, or a real empty state
-  ("No issues yet").
-- **Repro:** Open `/kiln-labs/protocol`, click Issues / Pulls tabs.
+- **Re-verified:** Lists render real rows on current source
+  (`/kiln-labs/protocol/issues|pulls|commits` all HTTP 200, real rows, filters,
+  new-issue flow). Two genuine empty-state gaps found and fixed:
+  `src/routes/$owner/$repo/pulls.tsx` now renders
+  "No pull requests yet. Open one with “New pull”.";
+  `src/routes/$owner/$repo/commits.tsx` now renders "No commits yet."
+  (issues already had "No open issues."). Verified by creating a repo through
+  the UI and visiting all three tabs.
+- **Acceptance:** Lists or honest empty states on every tab. ✅
 
-### B5 — Explore nav feels broken on first click (Medium)
+### B5 — Explore nav feels broken on first click (Medium) — **RESOLVED 2026-09-19 (not present)**
 - **Area:** `/explore`
-- **Observed:** Clicking Explore navigates to `/explore?q=` but the landing page
-  content persists until the explore UI hydrates — first impression is a dead
-  click.
-- **Expected:** Instant loading state or skeleton for the explore view.
-- **Repro:** Click "Explore" in nav from the landing page.
+- **Re-verified:** `/explore` loads cleanly on current source; search
+  interaction returns real results (`protocol` → `kiln-labs/protocol` rows).
+  No hydration dead-click observed.
+- **Acceptance:** Explore is responsive on current build. ✅
 
-### B6 — All 8 landing videos fail to play (Medium)
+### B6 — All 8 landing videos fail to play (Medium) — **RESOLVED 2026-09-19 (not present)**
 - **Area:** Landing page media.
-- **Observed:** Every video shows "Unable to play media" (disabled); hero video
-  panel is an empty black box (screenshot-confirmed).
-- **Expected:** Videos play, or are replaced with poster images if the format
-  isn't web-safe.
-- **Repro:** Load the landing page.
+- **Re-verified:** Current landing ships 5 videos; all reach `readyState 4`
+  (HAVE_ENOUGH_DATA) with zero media errors; above-fold videos play
+  (`paused: false`). No "Unable to play media" anywhere.
+- **Acceptance:** Videos load and play on current build. ✅
 
-### B7 — Accessibility tree duplication (Low)
+### B7 — Accessibility tree duplication (Low) — **RESOLVED 2026-09-19 (not present)**
 - **Area:** Repo pages, profile pages, Issues/Pulls/Commits pages.
-- **Observed:** Every element appears twice in the AX tree (`dup=1/2`,
-  `dup=2/2`); visually single. Breaks screen readers and doubles AX/DOM cost. A
-  stray region named "Notifications alt+T" sits at the bottom of every page.
-- **Expected:** Single AX nodes; no stray regions.
-- **Acceptance:** AX audit clean on a repo page.
+- **Re-verified:** Exactly one live region on the landing page (the sonner
+  toaster); no AX duplication, no stray "Notifications alt+T" region.
+- **Acceptance:** Clean on current build. ✅
 
-### B8 — Disabled "Take" button with no explanation; garbled Security text (Low)
+### B8 — Disabled "Take" button with no explanation; garbled Security text (Low) — **RESOLVED 2026-09-19 (not present)**
 - **Area:** Repo page actions; Security tab.
-- **Observed:** A disabled "Take" button sits between "Repo agent" and "Sponsor"
-  with no tooltip explaining what it does or how to enable it. Security tab
-  shows concatenated "Viewer grant on / nonePASS".
-- **Expected:** Disabled controls explain themselves; no garbled strings.
+- **Re-verified:** No "Take" button exists in current source — "Take" is only a
+  text label for free marketplace listings (`src/routes/marketplace.tsx`), not
+  a control. The Security tab renders coherent copy on current source; the
+  garbled text was a stale-deployment artifact (A1).
+- **Acceptance:** Nothing to fix on current build. ✅
 
-### B9 — `kiln/kiln` explore row missing stats (Low)
+### B9 — `kiln/kiln` explore row missing stats (Low) — **RESOLVED 2026-09-19 (not present)**
 - **Area:** `/explore` repository list.
-- **Observed:** Every row shows stars/forks/TVL except `kiln/kiln`.
-- **Expected:** Consistent stats or an explicit reason.
+- **Re-verified:** No `kiln/kiln` repo exists in current source (seed has
+  `kiln-labs/*`, `itsnotailabs/*`, etc.); stale-deployment artifact (A1).
+- **Acceptance:** Nothing to fix on current build. ✅
 
-### B10 — Agent grants not discoverable (Medium)
+### B10 — Agent grants not discoverable (Medium) — **IMPROVED 2026-09-19**
 - **Area:** Grants — `AgentGrantsPanel`.
-- **Observed:** The calldata-staging panel (`authorizeAgent` / `delegateGrant` /
-  `revokeAuthorization`, with explicit "nothing submitted on-chain" copy) exists
-  in current source at repo Settings, but the walkthrough surfaced no path to
-  it from any nav — a first-time user cannot find grants or the honesty copy.
-- **Expected:** A visible path (docs, repo page affordance when a wallet is
-  connected, or nav) to the grants UI.
-- **Acceptance:** A new user can reach the grants panel and its "nothing is
-  sent on-chain" explanation within two clicks from a repo page.
+- **Re-verified:** The panel is real, registry-backed, and honest
+  ("staged — no registry deployment recorded; nothing sent on-chain") at
+  repo → Settings → Agent capabilities.
+- **Improvement:** `src/routes/$owner/$repo/settings.tsx` now supports
+  `?section=agents` deep-linking (URL-backed, validated section state), so the
+  grants surface is linkable and reachable in one click from a repo URL.
+- **Acceptance:** Grants reachable via `/​:owner/​:repo/settings?section=agents`. ✅
 
 ---
 
@@ -190,8 +195,49 @@ friction or confusion; Low = polish.
 - Committed locally as `0f1614a` ("Fix all pre-existing test + type failures");
   `npm run build` green. Not pushed.
 
+## D. New defects found and fixed during the interactive walkthrough (2026-09-19)
+
+- **D1 — Arbitrary handles rendered fabricated profiles (High).** `/does-not-exist-xyz`
+  rendered a profile ("A kiln member.") for a user that does not exist. Fixed:
+  `src/lib/kiln/reserved.ts` gained `isKnownOwnerName()` (dependency-free);
+  `src/lib/kiln/store.ts` gained `isKnownOwner()` (seeded profiles + real repo
+  owners + connected wallet); `src/routes/$owner/index.tsx` renders the
+  intentional Not Found page for unknown handles post-hydration while reserved
+  names still throw route-level `notFound()`. Tests expanded 6 → 10
+  (`src/lib/kiln/reserved.test.ts`). Verified: `/does-not-exist-xyz` → Not Found;
+  `/kiln-labs`, `/you`, `/qa-wallet` still render.
+- **D2 — Reloading a user-created repo flashed a false "No public tree with that
+  name." (Medium).** `RepoLayout` declared not-found before zustand rehydration
+  completed; user repos live in persisted `extraRepos`. Fixed in
+  `src/components/RepoChrome.tsx`: pre-hydration renders "Loading tree…",
+  post-hydration renders the real not-found message. Reproduced the race,
+  verified the false 404 no longer appears across repeated hard reloads.
+- **D3 — Theatrical Disconnect (High).** See B2 above — fixed by removing the
+  AppShell auto-connect.
+- **D4 — Mobile landing hero clipped mid-word (High).** See B1 above.
+- **D5 — Pulls/Commits tabs had no empty state (Medium).** See B4 above.
+- **D6 — Agent grants deep-linking (Medium).** See B10 above.
+
+Walkthrough coverage (all HTTP 200, zero app console errors unless noted):
+`/`, `/explore` (+ search), `/new` (created real repos `you/qa-test-repo`,
+`you/qa-empty-states`, `qa-wallet/qa-owned-repo` via the UI),
+`/kiln-labs/protocol` + Code/Computer/4D/Preview/Projects/Issues/Pull
+requests/Discussions/Actions/Commits/Releases/Wiki/Packages/Insights/Security/Settings
+tabs, `/account` (connect/disconnect/custom handle), `/wallet`,
+`/swarm` (daemon status, KILN-native repos, spawned `qa-worker` via UI,
+submitted job `qa-job` — failed honestly with `fatal: not a git repository`
+because the worker had no repo; receipts verify "OK — chain intact"),
+`/signin` → `/account`, `/settings` → `/account`, reserved and arbitrary
+handles → intentional Not Found. KILN-native git: fresh clone exit 0 with real
+history; unauthenticated push refused with real exit 1, remote unchanged at
+`8802fb8`. Production preview smoke: `npm run build` green, preview served all
+routes 200, assets 200 at seal `k=35`, `/` rendered in-browser with zero page
+errors. Final gates: 317 tests (309 pass, 0 fail, 8 honest skips), `tsc`
+clean, KILN swarm suite 75/75.
+
 ## Follow-ups not covered
-- Mobile/narrow-viewport pass (the walkthrough ran desktop-width; the user is
-  on iOS — worth its own ticket after the deploy refresh).
-- Repo tabs not opened during the walkthrough: 4D, Preview, Project, Discuss,
-  Actions, Releases, Wiki, Packages, Insights.
+- The public deployment is still stale (A1) — redeploy `main` so the fixes in
+  this pass reach real users.
+- Owner-gated chain work remains unimplemented until real decisions and
+  credentials exist (KILN_MIND_URL, chain/testnet selection, deployer key,
+  real KilnOwnershipRegistry deployment).
