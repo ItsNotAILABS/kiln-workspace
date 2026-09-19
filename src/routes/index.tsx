@@ -16,7 +16,9 @@ function Home() {
       <section className="relative overflow-hidden rounded-xl border border-border">
         <video className="aspect-[16/8] w-full object-cover sm:aspect-[21/9]" src="/marketing/hero.mp4" poster="/marketing/hero.jpg" autoPlay muted loop playsInline />
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 px-5 py-8 sm:px-10 sm:py-12">
+        {/* In-flow on mobile: the absolute overlay clips the headline when the
+            16/8 video is shorter than the text block. Overlay only on sm+. */}
+        <div className="relative px-5 py-8 sm:absolute sm:inset-x-0 sm:bottom-0 sm:px-10 sm:py-12">
           <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">Source control · L1</p>
           <h1 className="mt-3 max-w-3xl font-display text-4xl leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
             The repository is the computer

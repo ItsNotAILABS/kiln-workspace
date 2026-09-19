@@ -59,9 +59,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [kiln]);
 
-  useEffect(() => {
-    if (kiln.hydrated && !kiln.wallet) kiln.connect("you");
-  }, [kiln.hydrated, kiln.wallet, kiln]);
+  // Note: no auto-connect here. A null wallet is a real, supported state
+  // (header Connect button, /account connect form). Auto-connecting "you"
+  // made Disconnect a no-op and the custom-handle form unreachable.
 
   useEffect(() => {
     const onPalette = () => setPalette(true);
