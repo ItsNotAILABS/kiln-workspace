@@ -19,6 +19,9 @@ function Commits() {
   return (
     <div className="mt-5">
       <h2 className="font-display text-2xl">Commits on {repo.defaultBranch}</h2>
+      {rows.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-border px-4 py-8 text-center text-sm text-muted">No commits yet.</p>
+      ) : (
       <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
         {rows.map((c, i) => (
           <li key={c.sha + i} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -34,6 +37,7 @@ function Commits() {
           </li>
         ))}
       </ul>
+      )}
     </div>
   );
 }

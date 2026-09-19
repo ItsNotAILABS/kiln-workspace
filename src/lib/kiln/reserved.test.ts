@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RESERVED_OWNER_NAMES, isReservedOwnerName } from "./reserved.ts";
+import { RESERVED_OWNER_NAMES, isKnownOwnerName, isReservedOwnerName } from "./reserved.ts";
 
 // Regression tests for the /$owner route trap: reserved top-level route names
 // (signin, settings, …) must never render as fabricated user profiles.
@@ -30,6 +30,37 @@ describe("isReservedOwnerName", () => {
     assert.equal(isReservedOwnerName("kiln-labs"), false);
     assert.equal(isReservedOwnerName("you"), false);
     assert.equal(isReservedOwnerName("octocat"), false);
+  });
+});
+
+describe("isKnownOwnerName", () => {
+  const known = {
+    seedHandles: ["kiln-labs", "meridian"],
+    repoOwners: ["kiln-labs", "itsnotailabs", "freddycreates"],
+    walletHandle: "you",
+  };
+  it("accepts seeded profiles, repo owners, and the wallet handle", () => {
+    assert.equal(isKnownOwnerName("kiln-labs", known), true);
+    assert.equal(isKnownOwnerName("meridian", known), true);
+    assert.equal(isKnownOwnerName("itsnotailabs", known), true);
+    assert.equal(isKnownOwnerName("freddycreates", known), true);
+    assert.equal(isKnownOwnerName("you", known), true);
+  });
+
+  it("is case-insensitive", () => {
+    assert.equal(isKnownOwnerName("Kiln-Labs", known), true);
+    assert.equal(isKnownOwnerName("YOU", known), true);
+  });
+
+  it("rejects arbitrary handles", () => {
+    assert.equal(isKnownOwnerName("does-not-exist-xyz", known), false);
+    assert.equal(isKnownOwnerName("signin", known), false);
+    assert.equal(isKnownOwnerName("", known), false);
+  });
+
+  it("works without a wallet", () => {
+    assert.equal(isKnownOwnerName("you", { ...known, walletHandle: null }), false);
+    assert.equal(isKnownOwnerName("kiln-labs", { ...known, walletHandle: null }), true);
   });
 });
 
