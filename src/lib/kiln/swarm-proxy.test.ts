@@ -19,6 +19,7 @@ import {
   stopSwarmNode,
   getSwarmNodeLogs,
   verifySwarmReceipts,
+  listGitRepos,
   SwarmDownError,
   SWARM_DOWN_FIX,
 } from "./swarm-proxy.ts";
@@ -48,6 +49,7 @@ const STUB_JOBS = [
 let server: ReturnType<typeof createServer>;
 let baseUrl = "";
 let lastAuth = "";
+let gitAuthSeen = "<unset>";
 
 function json(res: ServerResponse<IncomingMessage>, code: number, obj: unknown) {
   const body = JSON.stringify(obj);
@@ -59,6 +61,13 @@ before(async () => {
   server = createServer((req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { ok: true, version: 1 });
+    // /git is PUBLIC on the real daemon (no token needed, none expected)
+    if (req.method === "GET" && url.pathname === "/git") {
+      gitAuthSeen = req.headers.authorization || "";
+      return json(res, 200, {
+        repos: [{ owner: "auro", repo: "auro", createdAt: "2026-09-19T00:15:15.420Z" }],
+      });
+    }
     const auth = req.headers.authorization || "";
     lastAuth = auth;
     if (auth !== `Bearer ${TOKEN}`) return json(res, 401, { error: "unauthorized" });
@@ -152,6 +161,16 @@ describe("swarm-proxy against a stub daemon", () => {
     const v = await verifySwarmReceipts();
     assert.equal(v.allOk, true);
     assert.equal(v.results[0].count, 3);
+  });
+
+  it("lists KILN-native git repos without sending any token", async () => {
+    gitAuthSeen = "<unset>";
+    const repos = await listGitRepos();
+    assert.equal(repos.length, 1);
+    assert.equal(repos[0].owner, "auro");
+    assert.equal(repos[0].repo, "auro");
+    assert.equal(repos[0].cloneUrl, `${baseUrl}/git/auro/auro`);
+    assert.equal(gitAuthSeen, "", "public /git must not carry an Authorization header");
   });
 
   it("is honest when the daemon is down: status says down + fix, calls throw SwarmDownError", async () => {
