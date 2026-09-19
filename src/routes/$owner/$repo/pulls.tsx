@@ -50,6 +50,9 @@ function Pulls() {
         </form>
       ) : null}
       <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
+        {rows.length === 0 ? (
+          <li className="px-4 py-8 text-center text-sm text-muted">No pull requests yet. Open one with “New pull”.</li>
+        ) : null}
         {rows.map((p) => (
           <li key={p.id} className="px-4 py-3">
             <Link to="/$owner/$repo/pulls/$n" params={{ owner, repo: name, n: String(p.number) }} className="font-medium hover:text-seal">
