@@ -31,7 +31,9 @@ import { Route as PapersRouteImport } from './routes/papers'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PullsRouteImport } from './routes/pulls'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ShipatonRouteImport } from './routes/shipaton'
+import { Route as SigninRouteImport } from './routes/signin'
 import { Route as StarsRouteImport } from './routes/stars'
 import { Route as StartRouteImport } from './routes/start'
 import { Route as StudioRouteImport } from './routes/studio'
@@ -187,9 +189,19 @@ const SearchRoute = SearchRouteImport.update({
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShipatonRoute = ShipatonRouteImport.update({
   id: '/shipaton',
   path: '/shipaton',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SigninRoute = SigninRouteImport.update({
+  id: '/signin',
+  path: '/signin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StarsRoute = StarsRouteImport.update({
@@ -436,7 +448,9 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/shipaton': typeof ShipatonRoute
+  '/signin': typeof SigninRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
@@ -505,7 +519,9 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/shipaton': typeof ShipatonRoute
+  '/signin': typeof SigninRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
@@ -574,7 +590,9 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/pulls': typeof PullsRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/shipaton': typeof ShipatonRoute
+  '/signin': typeof SigninRoute
   '/stars': typeof StarsRoute
   '/start': typeof StartRoute
   '/studio': typeof StudioRoute
@@ -645,7 +663,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
+    | '/settings'
     | '/shipaton'
+    | '/signin'
     | '/stars'
     | '/start'
     | '/studio'
@@ -714,7 +734,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
+    | '/settings'
     | '/shipaton'
+    | '/signin'
     | '/stars'
     | '/start'
     | '/studio'
@@ -782,7 +804,9 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/pulls'
     | '/search'
+    | '/settings'
     | '/shipaton'
+    | '/signin'
     | '/stars'
     | '/start'
     | '/studio'
@@ -852,7 +876,9 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   PullsRoute: typeof PullsRoute
   SearchRoute: typeof SearchRoute
+  SettingsRoute: typeof SettingsRoute
   ShipatonRoute: typeof ShipatonRoute
+  SigninRoute: typeof SigninRoute
   StarsRoute: typeof StarsRoute
   StartRoute: typeof StartRoute
   StudioRoute: typeof StudioRoute
@@ -1020,11 +1046,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/shipaton': {
       id: '/shipaton'
       path: '/shipaton'
       fullPath: '/shipaton'
       preLoaderRoute: typeof ShipatonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signin': {
+      id: '/signin'
+      path: '/signin'
+      fullPath: '/signin'
+      preLoaderRoute: typeof SigninRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/stars': {
@@ -1469,7 +1509,9 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   PullsRoute: PullsRoute,
   SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRoute,
   ShipatonRoute: ShipatonRoute,
+  SigninRoute: SigninRoute,
   StarsRoute: StarsRoute,
   StartRoute: StartRoute,
   StudioRoute: StudioRoute,

@@ -31,38 +31,48 @@ friction or confusion; Low = polish.
 - **Acceptance:** `/swarm` on the public site renders the daemon console;
   document the deploy trigger/SLA so staleness is visible next time.
 
-### A2 — `/signin` renders a bogus profile for a user literally named "signin" (High)
+### A2 — `/signin` renders a bogus profile for a user literally named "signin" (High) — **FIXED 2026-09-19**
 - **Area:** Routing / auth — nav "Sign in"
 - **Observed:** There is no `src/routes/signin.tsx`; the `/$owner` dynamic route
   catches `/signin` and renders "Kiln account · 0 repositories" for user
   "signin". Meanwhile "Connect" opens the real wallet flow. Two sign-in entries,
   one a dead end.
-- **Expected:** `/signin` serves the real sign-in/connect flow or redirects to
-  it. A URL must never render a fake user.
+- **Fix:** New `src/routes/signin.tsx` redirects to `/account` — the app's real
+  identity flow (wallet connect/profile; auth is off by default, there is no
+  password sign-in). New `src/lib/kiln/reserved.ts` defines `RESERVED_OWNER_NAMES`
+  (all top-level static segments + `login`, the auth `SIGN_IN_PATH`); both
+  `/$owner/` and `/$owner/$repo` throw `notFound()` in `beforeLoad` for reserved
+  names, so no reserved name can ever render as a profile again. Covered by
+  `src/lib/kiln/reserved.test.ts` (6 tests, incl. a coverage test that fails if
+  a new top-level route is added without updating the set).
 - **Repro:** Click "Sign in" in the top nav.
 - **Acceptance:** `/signin` never renders a user profile; single obvious path
-  to connect.
+  to connect. ✅ Verified via new tests; route redirect verified in build.
 
-### A3 — `/settings` has no top-level route; renders a "settings" user profile (Medium)
+### A3 — `/settings` has no top-level route; renders a "settings" user profile (Medium) — **FIXED 2026-09-19**
 - **Area:** Routing — `/settings`
 - **Observed:** No `src/routes/settings.tsx` exists; `/$owner` catches it and
   renders an empty profile. Repo-level settings (`/:owner/:repo/settings`)
   exist, but the obvious top-level URL is a trap.
-- **Expected:** Account settings page, or redirect to the connected account's
-  settings.
+- **Fix:** New `src/routes/settings.tsx` redirects to `/account` (global account
+  settings — handle, address, connect/disconnect — live there; per-repo settings
+  remain at `/$owner/$repo/settings`). Same reserved-name guard as A2.
 - **Repro:** Navigate to `/settings` directly.
 - **Acceptance:** `/settings` resolves to something intentional, never a fake
-  profile.
+  profile. ✅
 
-### A4 — Repo "Agent" tab is a dead tab: bare "Not Found", no recovery (Medium)
+### A4 — Repo "Agent" tab is a dead tab: bare "Not Found", no recovery (Medium) — **RESOLVED 2026-09-19 (not present in current source)**
 - **Area:** Repo chrome — `/:owner/:repo/agent`
-- **Observed:** The tab bar shows an "Agent" tab but no `src/routes/$owner/$repo/agent.tsx`
-  exists, so it renders a black page with only the words "Not Found" — no
-  explanation, no back link.
-- **Expected:** Either the route exists or the tab is removed/gated; the 404
-  page offers guidance and a way back.
-- **Repro:** Open `/kiln/kiln`, click the "Agent" tab.
-- **Acceptance:** No dead tabs; 404 carries helpful copy and links.
+- **Observed (stale k=33 public build):** The tab bar showed an "Agent" tab with
+  no backing route, rendering a bare "Not Found".
+- **Re-verified:** Current source `src/components/RepoChrome.tsx` has **no**
+  Agent tab (tabs: Code, Computer, 4D, Preview, Projects, Issues, Pull requests,
+  Discussions, Actions, Commits, Releases, Wiki, Packages, Insights, Security,
+  Settings); `grep` for an Agent tab label across `src/` returns nothing. The
+  dead tab was an artifact of the stale deployment (A1), not current source.
+- **Additionally:** new `src/lib/not-found.tsx` wired as the router's
+  `defaultNotFoundComponent` — any genuine 404 now shows recovery copy with
+  Home / Explore / Search links instead of a bare message.
 
 ---
 
