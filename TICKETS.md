@@ -342,3 +342,32 @@ clean, KILN swarm suite 75/75.
   now teaches the intended pattern).
 - **Committed:** locally in the KILN repo (explicit paths only); not pushed
   (needs architect's repo+branch call per standing rule).
+
+### E4 — Daemon supervisor re-logs terminally-dead nodes every tick: ~25k lines/day, 10MB daemon.log (Medium) — **FIXED 2026-09-19**
+- **Reported:** While investigating why the watchdog restarted the daemon
+  three times in one evening, `~/.kiln-swarm/daemon.log` was 10MB with
+  24,845 repeats of `node X: max restarts (3) reached — leaving dead` /
+  `node X: dead, policy=on-failure — not respawning`: a full ~16-line block
+  every 2 seconds for nodes that are already terminally dead and will never
+  be respawned.
+- **Reproduced:** Scratch daemon, fast tick, two dead nodes (one
+  `policy=never`, one `restarts=maxRestarts`): both terminal lines repeated
+  on every tick.
+- **Root cause (in the KILN repo, `swarm/lib/daemon.mjs`):** `reconcile()`
+  runs on every tick and unconditionally `log()`s the terminal branches.
+  Terminal states never change on their own, so the lines are pure churn.
+- **Fix:** `logTerminalOnce(key, msg)` — a per-daemon-lifetime dedup set;
+  each distinct terminal state (`<id>:dead:<policy>`,
+  `<id>:maxrestarts:<restarts>`) logs exactly once. A genuinely new
+  situation (policy edited, restarts incremented) still logs.
+- **Verified:** New `swarm/test/daemon-churn.test.mjs` — fails on the old
+  code (lines repeated ~15x), passes on the fix (exactly 1 each). Full
+  swarm suite: 94/94 pass, 0 fail, 0 skipped.
+- **Committed:** locally in the KILN repo (explicit paths only); not pushed
+  (needs architect's repo+branch call per standing rule).
+- **Note on the daemon deaths that surfaced this:** one stop was a graceful
+  SIGTERM (`daemon stop` from somewhere — source not identified), one was a
+  silent kill with no log line and no OOM trace (environmental SIGKILL
+  suspected). The watchdog revived the daemon each time, which is its job.
+  Nothing in-repo explains the silent kills; left as an open observation,
+  not a defect with a repro.
