@@ -1,0 +1,5 @@
+.kiln/
+__pycache__/
+*.pyc
+.jobs/
+node_modules/
