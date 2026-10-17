@@ -101,3 +101,7 @@ export const kilnContextReceiptsVerify = createServerFn({ method: "POST" })
 
 export const kilnLocalNodes = createServerFn({ method: "POST" })
   .handler(async () => kilnLocal("GET", "/nodes"));
+
+
+export const kilnContextMetrics = createServerFn({ method: "POST" })
+  .handler(async () => kilnLocal("GET", "/v1/context/metrics"));
