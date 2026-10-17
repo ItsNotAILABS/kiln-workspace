@@ -16,6 +16,7 @@ import { Route as ArchitectureRouteImport } from './routes/architecture'
 import { Route as AssistantsRouteImport } from './routes/assistants'
 import { Route as CliRouteImport } from './routes/cli'
 import { Route as CloudRouteImport } from './routes/cloud'
+import { Route as ContextRouteImport } from './routes/context'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as FleetRouteImport } from './routes/fleet'
 import { Route as GistsRouteImport } from './routes/gists'
@@ -109,6 +110,11 @@ const CliRoute = CliRouteImport.update({
 const CloudRoute = CloudRouteImport.update({
   id: '/cloud',
   path: '/cloud',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContextRoute = ContextRouteImport.update({
+  id: '/context',
+  path: '/context',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExploreRoute = ExploreRouteImport.update({
@@ -415,6 +421,7 @@ export interface FileRoutesByFullPath {
   '/assistants': typeof AssistantsRoute
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
+  '/context': typeof ContextRoute
   '/explore': typeof ExploreRoute
   '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
@@ -483,6 +490,7 @@ export interface FileRoutesByTo {
   '/assistants': typeof AssistantsRoute
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
+  '/context': typeof ContextRoute
   '/explore': typeof ExploreRoute
   '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
@@ -551,6 +559,7 @@ export interface FileRoutesById {
   '/assistants': typeof AssistantsRoute
   '/cli': typeof CliRoute
   '/cloud': typeof CloudRoute
+  '/context': typeof ContextRoute
   '/explore': typeof ExploreRoute
   '/fleet': typeof FleetRoute
   '/gists': typeof GistsRouteWithChildren
@@ -621,6 +630,7 @@ export interface FileRouteTypes {
     | '/assistants'
     | '/cli'
     | '/cloud'
+    | '/context'
     | '/explore'
     | '/fleet'
     | '/gists'
@@ -689,6 +699,7 @@ export interface FileRouteTypes {
     | '/assistants'
     | '/cli'
     | '/cloud'
+    | '/context'
     | '/explore'
     | '/fleet'
     | '/gists'
@@ -756,6 +767,7 @@ export interface FileRouteTypes {
     | '/assistants'
     | '/cli'
     | '/cloud'
+    | '/context'
     | '/explore'
     | '/fleet'
     | '/gists'
@@ -825,6 +837,7 @@ export interface RootRouteChildren {
   AssistantsRoute: typeof AssistantsRoute
   CliRoute: typeof CliRoute
   CloudRoute: typeof CloudRoute
+  ContextRoute: typeof ContextRoute
   ExploreRoute: typeof ExploreRoute
   FleetRoute: typeof FleetRoute
   GistsRoute: typeof GistsRouteWithChildren
@@ -900,6 +913,13 @@ declare module '@tanstack/react-router' {
       path: '/cloud'
       fullPath: '/cloud'
       preLoaderRoute: typeof CloudRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/context': {
+      id: '/context'
+      path: '/context'
+      fullPath: '/context'
+      preLoaderRoute: typeof ContextRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/explore': {
@@ -1434,6 +1454,7 @@ const rootRouteChildren: RootRouteChildren = {
   AssistantsRoute: AssistantsRoute,
   CliRoute: CliRoute,
   CloudRoute: CloudRoute,
+  ContextRoute: ContextRoute,
   ExploreRoute: ExploreRoute,
   FleetRoute: FleetRoute,
   GistsRoute: GistsRouteWithChildren,
