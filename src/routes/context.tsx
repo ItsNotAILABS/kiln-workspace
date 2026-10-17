@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BrainCircuit, Database, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import {
   kilnContextIndex,
+  kilnContextMetrics,
   kilnContextQuery,
   kilnContextReceiptsVerify,
   kilnContextSit,
@@ -29,6 +30,8 @@ function ContextFabric() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [verification, setVerification] = useState<any>(null);
+  const [metrics, setMetrics] = useState<any>(null);
+  const [limits, setLimits] = useState<any>(null);
   const [knownHashes, setKnownHashes] = useState<Record<string, string>>({});
 
   const pack = mode === "sit" ? result?.sit?.code : result?.pack;
@@ -54,6 +57,14 @@ function ContextFabric() {
     if (!target) return;
     const res = (await kilnContextStatus({ data: { node: target } })) as ApiResult;
     if (res.ok) setStatus(res.data?.index || null);
+  }
+
+  async function loadMetrics() {
+    const res = (await kilnContextMetrics()) as ApiResult;
+    if (res.ok) {
+      setMetrics(res.data?.metrics || null);
+      setLimits(res.data?.limits || null);
+    }
   }
 
   async function buildIndex() {
@@ -91,6 +102,7 @@ function ContextFabric() {
     for (const item of nextPack?.unchanged || []) if (item.path && item.sha256) hashes[item.path] = item.sha256;
     setKnownHashes(hashes);
     await loadStatus(node);
+    await loadMetrics();
   }
 
   async function verifyReceipts() {
@@ -102,7 +114,7 @@ function ContextFabric() {
     setVerification(res.data);
   }
 
-  useEffect(() => { void loadNodes(); }, []);
+  useEffect(() => { void loadNodes(); void loadMetrics(); }, []);
   useEffect(() => { if (node) void loadStatus(node); }, [node]);
 
   return (
@@ -171,6 +183,26 @@ function ContextFabric() {
           {error ? <p className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p> : null}
         </div>
       </section>
+
+      {metrics ? (
+        <section className="mt-4 panel p-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-subtle">Cumulative context economics</p>
+              <p className="mt-1 text-sm text-muted">Local transport/context telemetry. Token figures remain estimates until measured with the target model tokenizer.</p>
+            </div>
+            <p className="font-mono text-[10px] text-subtle">limits {limits?.maxBytes || "—"} B · {limits?.maxChunks || "—"} chunks · {limits?.maxMemoryTokens || "—"} memory tokens</p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <Metric label="Retrievals" value={String(metrics.retrievals || 0)} />
+            <Metric label="Emitted" value={`${metrics.emittedBytes || 0} B`} />
+            <Metric label="Delta avoided" value={`${metrics.deltaAvoidedBytes || 0} B`} />
+            <Metric label="Est. tokens avoided" value={String(metrics.estimatedTokensAvoidedByDelta || 0)} />
+            <Metric label="Cache reuse" value={`${((metrics.cacheReuseRatio || 0) * 100).toFixed(1)}%`} />
+            <Metric label="Avg retrieval" value={`${Number(metrics.averageLatencyMs || 0).toFixed(1)} ms`} />
+          </div>
+        </section>
+      ) : null}
 
       {pack ? (
         <>
