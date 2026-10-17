@@ -119,7 +119,7 @@ function Home() {
         {[
           ["Product", ["/explore", "Explore"], ["/marketplace", "Marketplace"], ["/pricing", "Pricing"], ["/apps", "Apps"]],
           ["Create", ["/studio", "Studio"], ["/new", "New repository"], ["/new?tab=import", "Import GitHub"], ["/gists", "Gists"]],
-          ["Docs", ["/start", "Get started"], ["/architecture", "Architecture"], ["/papers", "Papers"], ["/cli", "CLI"], ["/mcp", "MCP"]],
+          ["Docs", ["/start", "Get started"], ["/architecture", "Architecture"], ["/context", "Context Fabric"], ["/papers", "Papers"], ["/cli", "CLI"], ["/mcp", "MCP"]],
         ].map(([title, ...links]) => (
           <div key={String(title)}>
             <p className="text-[11px] uppercase tracking-[0.16em] text-subtle">{title as string}</p>
