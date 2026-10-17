@@ -50,7 +50,7 @@ export const kilnContextIndex = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const node = String(data.node || "").trim();
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
-    return kilnLocal("POST", `/context/${encodeURIComponent(node)}/index`, {
+    return kilnLocal("POST", `/v1/context/nodes/${encodeURIComponent(node)}/index`, {
       chunkLines: data.chunkLines,
       overlap: data.overlap,
     });
@@ -63,7 +63,7 @@ export const kilnContextQuery = createServerFn({ method: "POST" })
     const query = String(data.query || "").trim();
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
     if (!query || query.length > 4096) return { ok: false as const, status: 400, error: "Query is required and must be <= 4096 characters" };
-    return kilnLocal("POST", `/context/${encodeURIComponent(node)}/query`, {
+    return kilnLocal("POST", `/v1/context/nodes/${encodeURIComponent(node)}/query`, {
       query,
       maxBytes: Math.min(Math.max(Number(data.maxBytes || 24000), 512), 128000),
       maxChunks: Math.min(Math.max(Number(data.maxChunks || 12), 1), 50),
@@ -76,5 +76,28 @@ export const kilnContextStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const node = String(data.node || "").trim();
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
-    return kilnLocal("GET", `/context/${encodeURIComponent(node)}/status`);
+    return kilnLocal("GET", `/v1/context/nodes/${encodeURIComponent(node)}/status`);
   });
+
+
+export const kilnContextSit = createServerFn({ method: "POST" })
+  .inputValidator((d: { node: string; query: string; maxBytes?: number; maxChunks?: number; memoryTokens?: number; knownHashes?: Record<string,string> }) => d)
+  .handler(async ({ data }) => {
+    const node = String(data.node || "").trim();
+    const query = String(data.query || "").trim();
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
+    if (!query || query.length > 4096) return { ok: false as const, status: 400, error: "Query is required and must be <= 4096 characters" };
+    return kilnLocal("POST", `/v1/context/nodes/${encodeURIComponent(node)}/sit`, {
+      query,
+      maxBytes: Math.min(Math.max(Number(data.maxBytes || 18000), 512), 128000),
+      maxChunks: Math.min(Math.max(Number(data.maxChunks || 10), 1), 50),
+      memoryTokens: Math.min(Math.max(Number(data.memoryTokens || 1200), 128), 8000),
+      knownHashes: data.knownHashes || {},
+    });
+  });
+
+export const kilnContextReceiptsVerify = createServerFn({ method: "POST" })
+  .handler(async () => kilnLocal("POST", "/v1/context/receipts/verify", {}));
+
+export const kilnLocalNodes = createServerFn({ method: "POST" })
+  .handler(async () => kilnLocal("GET", "/nodes"));
