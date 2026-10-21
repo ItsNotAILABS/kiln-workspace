@@ -78,3 +78,48 @@ export const kilnContextStatus = createServerFn({ method: "POST" })
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
     return kilnLocal("GET", `/context/${encodeURIComponent(node)}/status`);
   });
+
+
+export const kilnGraphBuild = createServerFn({ method: "POST" })
+  .inputValidator((d: { node: string }) => d)
+  .handler(async ({ data }) => {
+    const node = String(data.node || "").trim();
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
+    return kilnLocal("POST", `/graph/${encodeURIComponent(node)}/build`, {});
+  });
+
+export const kilnGraphImpact = createServerFn({ method: "POST" })
+  .inputValidator((d: { node: string; paths: string[]; depth?: number }) => d)
+  .handler(async ({ data }) => {
+    const node = String(data.node || "").trim();
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
+    const paths = Array.isArray(data.paths) ? data.paths.map(String).filter(Boolean).slice(0, 200) : [];
+    if (!paths.length) return { ok: false as const, status: 400, error: "paths[] required" };
+    return kilnLocal("POST", `/graph/${encodeURIComponent(node)}/impact`, { paths, depth: data.depth ?? 2 });
+  });
+
+export const kilnKnowledgePut = createServerFn({ method: "POST" })
+  .inputValidator((d: { node: string; subject: string; predicate: string; value: unknown; evidence?: {path:string;sha256:string}[]; confidence?: string }) => d)
+  .handler(async ({ data }) => {
+    const node = String(data.node || "").trim();
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
+    return kilnLocal("POST", `/knowledge/${encodeURIComponent(node)}/facts`, {
+      subject: String(data.subject || "").slice(0, 512),
+      predicate: String(data.predicate || "").slice(0, 256),
+      value: data.value,
+      evidence: Array.isArray(data.evidence) ? data.evidence.slice(0, 50) : [],
+      confidence: String(data.confidence || "verified").slice(0, 64),
+    });
+  });
+
+export const kilnKnowledgeQuery = createServerFn({ method: "POST" })
+  .inputValidator((d: { node: string; query?: string }) => d)
+  .handler(async ({ data }) => {
+    const node = String(data.node || "").trim();
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
+    return kilnLocal("POST", `/knowledge/${encodeURIComponent(node)}/query`, { query: String(data.query || "").slice(0, 4096) });
+  });
+
+export const kilnPortaEvaluate = createServerFn({ method: "POST" })
+  .inputValidator((d: Record<string, unknown>) => d)
+  .handler(async ({ data }) => kilnLocal("POST", "/porta/evaluate", data));
