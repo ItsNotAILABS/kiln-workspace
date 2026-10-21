@@ -123,3 +123,21 @@ export const kilnKnowledgeQuery = createServerFn({ method: "POST" })
 export const kilnPortaEvaluate = createServerFn({ method: "POST" })
   .inputValidator((d: Record<string, unknown>) => d)
   .handler(async ({ data }) => kilnLocal("POST", "/porta/evaluate", data));
+
+
+export const kilnContextCompile = createServerFn({ method: "POST" })
+  .inputValidator((d: { node: string; query: string; tokenBudget?: number; maxBytes?: number; maxChunks?: number; includeFacts?: boolean; includeGraph?: boolean }) => d)
+  .handler(async ({ data }) => {
+    const node = String(data.node || "").trim();
+    const query = String(data.query || "").trim();
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(node)) return { ok: false as const, status: 400, error: "Invalid node" };
+    if (!query || query.length > 4096) return { ok: false as const, status: 400, error: "Query is required and must be <= 4096 characters" };
+    return kilnLocal("POST", `/context/${encodeURIComponent(node)}/compile`, {
+      query,
+      tokenBudget: Math.min(Math.max(Number(data.tokenBudget || 12000), 256), 500000),
+      maxBytes: Math.min(Math.max(Number(data.maxBytes || 64000), 512), 512000),
+      maxChunks: Math.min(Math.max(Number(data.maxChunks || 20), 1), 100),
+      includeFacts: data.includeFacts !== false,
+      includeGraph: data.includeGraph !== false,
+    });
+  });
