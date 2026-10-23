@@ -55,7 +55,7 @@ import { constitution, remember, sealMachine } from "./machine-seal.js";
 })();
 
 export const KILN_HANDLE = "kiln";
-export const KILN_ADDRESS = "0xc04e1a85381b37ed879b1dfafe800ff29d7e065a";
+export const KILN_ADDRESS = "0xbb316d9499a18f9cd5e3691e25e04072308e3700";
 
 let booting = null;
 
