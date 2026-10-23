@@ -38,6 +38,11 @@ export const INFRA_SCHEMA = [
 
 const GOVERNANCE_SET = new Set(GOVERNANCE_TOOLS.map((tool) => tool.name));
 
+/**
+ * @param {unknown} payload JSON payload piped to the Python tool's stdin.
+ * @param {number} [timeout] Kill the child after this many ms.
+ * @returns {Promise<{ code: number, out: string, err: string }>} Raw process result.
+ */
 function runPython(payload, timeout = 8000) {
   return new Promise((resolve) => {
     const child = spawn("python3", ["-m", "kiln.tools"], {
@@ -57,6 +62,11 @@ function runPython(payload, timeout = 8000) {
   });
 }
 
+/**
+ * @param {string} name Tool name, with or without the `kiln_` prefix.
+ * @param {Record<string, unknown>} [args] Tool arguments passed through to Python.
+ * @returns {Promise<Record<string, unknown>>} The parsed JSON result.
+ */
 export async function runInfraTool(name, args = {}) {
   if (GOVERNANCE_SET.has(name)) {
     try {
@@ -82,16 +92,37 @@ export async function runInfraTool(name, args = {}) {
   return { ok: false, error: "empty infra result", text: r.err || "empty infra result" };
 }
 
+/**
+ * Result of the kiln_capsule infra tool.
+ * @typedef {Object} CapsuleResult
+ * @property {boolean} ok
+ * @property {string} [isolation]
+ * @property {string} [host]
+ * @property {string} [html]
+ * @property {string} [error]
+ */
+
+/**
+ * @param {string} repoId Repository id, e.g. "kiln/studio".
+ * @param {unknown} files File tree payload for the capsule assembler.
+ * @returns {Promise<CapsuleResult>} The capsule result.
+ */
 export async function renderCapsule(repoId, files) {
-  return runInfraTool("kiln_capsule", { repo: repoId, files, html: true });
+  const out = await runInfraTool("kiln_capsule", { repo: repoId, files, html: true });
+  return /** @type {CapsuleResult} */ (out);
 }
 
+/**
+ * @param {string} html Response body.
+ * @param {number} [status] HTTP status.
+ */
 export function htmlResponse(html, status = 200) {
   return { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "*", "content-security-policy": "sandbox allow-scripts allow-forms" }, body: html };
 }
 
 if (process.argv[1] && import.meta.url === url.pathToFileURL(process.argv[1]).href) {
   const name = process.argv[2] || "kiln_physics";
+  /** @type {Record<string, unknown>} */
   let args = {};
   if (process.argv[3]) { try { args = JSON.parse(process.argv[3]); } catch { args = { repo: process.argv[3] }; } }
   const out = await runInfraTool(name, args);

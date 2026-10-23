@@ -1,17 +1,26 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { findRepo, kilnHost, useKiln } from "@/lib/kiln/store";
+import { AgentGrantsPanel } from "@/components/AgentGrantsPanel";
+
+const SECTIONS = ["general", "access", "agents", "branches", "webhooks", "pages", "secrets", "danger"] as const;
+type Section = (typeof SECTIONS)[number];
+function toSection(v: unknown): Section {
+  return SECTIONS.includes(v as Section) ? (v as Section) : "general";
+}
 
 export const Route = createFileRoute("/$owner/$repo/settings")({
+  validateSearch: (s: Record<string, unknown>) => ({ section: toSection(s.section) }),
   component: Settings,
 });
 
 function Settings() {
   const { owner, repo: name } = Route.useParams();
+  const { section } = Route.useSearch();
   const kiln = useKiln();
   const nav = useNavigate();
   const repo = findRepo(kiln, owner, name);
-  const [section, setSection] = useState<"general" | "access" | "branches" | "webhooks" | "pages" | "secrets" | "danger">("general");
+  const setSection = (s: Section) => nav({ to: ".", search: (p) => ({ ...p, section: s }) });
   const [description, setDescription] = useState(repo?.description ?? "");
   const [website, setWebsite] = useState(repo?.website ?? "");
   const [topics, setTopics] = useState(repo?.topics.join(", ") ?? "");
@@ -27,6 +36,7 @@ function Settings() {
   const navItems = [
     ["general", "General"],
     ["access", "Collaborators"],
+    ["agents", "Agent capabilities"],
     ["branches", "Branches"],
     ["webhooks", "Webhooks"],
     ["pages", "Pages"],
@@ -100,6 +110,7 @@ function Settings() {
             </form>
           </section>
         ) : null}
+        {section === "agents" ? <AgentGrantsPanel owner={owner} repo={name} /> : null}
         {section === "branches" ? (
           <section className="panel space-y-3 p-5">
             <h2 className="font-display text-2xl">Branches</h2>

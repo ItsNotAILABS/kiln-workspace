@@ -15,7 +15,7 @@ For pointing `kiln.medinatechlabs.net` at the forge. Do not start until every bo
 - [x] No fixture repo presents fabricated numbers as live (demo badges + separated section, 2026-09-10)
 - [x] Explore sorts real repos by live GitHub stars with fallback
 - [x] Repo header + About panel show live stats with provenance
-- [ ] Registry (`KILN/projects/registry.json`) is the canonical project list — seed sync scripted (`scripts/sync-registry.mjs`), verify on a registry change
+- [ ] Registry (`KILN/projects/registry.json`) is the canonical project list — seed sync scripted (`npm run sync:kiln (scripts/sync-kiln.mjs)`), verify on a registry change
 - [ ] Chain addresses: only verified on-chain values shown; everything else reads "not deployed" (still shows placeholder `0x1a1b…` values — needs a real KilnOwnershipRegistry deployment)
 
 ## Chain

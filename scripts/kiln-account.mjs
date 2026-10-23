@@ -106,7 +106,7 @@ function repo({ id, name, description, files, topics }) {
 }
 
 async function build(manifest) {
-  const address = "0x" + sha256("kiln-addr:kiln-operator-secret-v1-3e032dea509564c25c64ddb9243c5b1b0fb0b2f8").slice(0, 40);
+  const address = "0x" + sha256("kiln-addr:kiln-operator-secret-v1-ff90d6be99d7a6f4109acdb09b5c01eed94980b2").slice(0, 40);
   const account = {
     handle: "kiln",
     displayName: "KILN",

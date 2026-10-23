@@ -26,6 +26,9 @@ export function RepoLayout() {
   const kiln = useKiln();
   const repo = findRepo(kiln, owner, name);
   if (!repo) {
+    // User-created repos live in persisted state: never declare "not found"
+    // before rehydration completes, or a reload flashes a false negative.
+    if (!kiln.hydrated) return <p className="py-16 text-center text-muted">Loading tree…</p>;
     return <p className="py-16 text-center text-muted">No public tree with that name.</p>;
   }
   return (

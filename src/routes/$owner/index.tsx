@@ -1,9 +1,20 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { allRepos, profileOf, starCount, useKiln } from "@/lib/kiln/store";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { allRepos, isKnownOwner, profileOf, starCount, useKiln } from "@/lib/kiln/store";
+import { isReservedOwnerName } from "@/lib/kiln/reserved";
+import { AppNotFoundComponent } from "@/lib/not-found";
 import { SEED_PACKAGES, SEED_PROFILES } from "@/lib/kiln/seed";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/$owner/")({
+  beforeLoad: ({ params }) => {
+    // Reserved top-level route names (signin, settings, …) must never render
+    // as fabricated user profiles.
+    if (isReservedOwnerName(params.owner)) throw notFound();
+    // Client-side navigations (store hydrated): unknown handles 404 immediately.
+    // Direct loads decide after hydration in the component to avoid an SSR flash.
+    const s = useKiln.getState();
+    if (s.hydrated && !isKnownOwner(s, params.owner)) throw notFound();
+  },
   validateSearch: (s: Record<string, unknown>) => ({ tab: String(s.tab ?? "overview") }),
   component: ProfilePage,
 });
@@ -39,6 +50,12 @@ function ProfilePage() {
   const { owner } = Route.useParams();
   const { tab } = Route.useSearch();
   const kiln = useKiln();
+  // Unknown handles are not identities: show not-found once the store is
+  // hydrated (before that, SSR and the first client render agree on the
+  // profile markup to avoid a hydration mismatch).
+  if (kiln.hydrated && !isKnownOwner(kiln, owner)) {
+    return <AppNotFoundComponent />;
+  }
   const profile = profileOf(owner);
   const repos = allRepos(kiln).filter((r) => r.owner.toLowerCase() === owner.toLowerCase());
   const starred = allRepos(kiln).filter((r) => kiln.stars[r.id] && (kiln.wallet?.handle.toLowerCase() === owner.toLowerCase()));
