@@ -9,6 +9,8 @@ import {
   getSwarmNodeLogs,
   verifySwarmReceipts,
   listGitRepos,
+  listWorkspaces,
+  getWorkspaceStatus,
   SwarmDownError,
   type SpawnNodeInput,
   type SubmitJobInput,
@@ -99,6 +101,26 @@ export const swarmGitRepos = createServerFn({ method: "GET" }).handler(async () 
     return fail(e);
   }
 });
+
+export const swarmWorkspaces = createServerFn({ method: "GET" })
+  .inputValidator((d: { owner?: string }) => d ?? {})
+  .handler(async ({ data }) => {
+    try {
+      return { ok: true as const, workspaces: await listWorkspaces(data?.owner) };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmWorkspaceStatus = createServerFn({ method: "GET" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    try {
+      return { ok: true as const, status: await getWorkspaceStatus(data.id) };
+    } catch (e) {
+      return fail(e);
+    }
+  });
 
 function fail(e: unknown) {  const err = e as Error & { fix?: string };
   const out: { ok: false; error: string; fix?: string } = {
