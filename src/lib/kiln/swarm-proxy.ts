@@ -282,3 +282,58 @@ export async function listGitRepos(): Promise<GitRepoView[]> {
     cloneUrl: `${apiUrl}/git/${r.owner}/${r.repo}`,
   }));
 }
+
+/** Mirrors the daemon's workspace record (see swarm/lib/workspaces.mjs). */
+export interface WorkspaceView {
+  id: string;
+  owner: string;
+  slug: string;
+  name: string;
+  description: string;
+  repos: string[];
+  siteIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceRepoStatus {
+  repo: string;
+  exists: boolean;
+  branch: string | null;
+  head: { sha: string; shortSha: string; subject: string } | null;
+}
+
+export interface WorkspaceSiteStatus {
+  id: string;
+  name: string | null;
+  frontend: string | null;
+  backend: string | null;
+  found: boolean;
+}
+
+/** Mirrors the daemon's aggregated workspace status (GET /v1/workspaces/:id). */
+export interface WorkspaceStatusView {
+  workspace: WorkspaceView;
+  repos: WorkspaceRepoStatus[];
+  sites: WorkspaceSiteStatus[];
+  memory: {
+    repos: Record<string, { present: boolean; coreLabels: string[] }>;
+    linked: boolean;
+  };
+}
+
+/**
+ * KILN Workspaces from the daemon registry (GET /v1/workspaces).
+ * Daemons that predate the workspaces rollout answer 404 — daemonFetch
+ * surfaces that as an error and the pages render the rollout state
+ * honestly instead of mock data.
+ */
+export async function listWorkspaces(owner?: string): Promise<WorkspaceView[]> {
+  const q = owner ? `?owner=${encodeURIComponent(owner)}` : "";
+  const data = (await daemonFetch(`/v1/workspaces${q}`)) as { workspaces: WorkspaceView[] };
+  return data.workspaces ?? [];
+}
+
+export async function getWorkspaceStatus(id: string): Promise<WorkspaceStatusView> {
+  return (await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`)) as WorkspaceStatusView;
+}

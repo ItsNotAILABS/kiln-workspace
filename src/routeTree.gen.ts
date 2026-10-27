@@ -40,10 +40,13 @@ import { Route as StudioRouteImport } from './routes/studio'
 import { Route as SwarmRouteImport } from './routes/swarm'
 import { Route as TrendingRouteImport } from './routes/trending'
 import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as WorkspacesRouteImport } from './routes/workspaces'
 import { Route as OwnerIndexRouteImport } from './routes/$owner/index'
 import { Route as OwnerRepoRouteImport } from './routes/$owner/$repo'
 import { Route as GistsIdRouteImport } from './routes/gists.$id'
 import { Route as TopicsSlugRouteImport } from './routes/topics.$slug'
+import { Route as WorkspacesIndexRouteImport } from './routes/workspaces.index'
+import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$workspaceId'
 import { Route as OwnerRepoIndexRouteImport } from './routes/$owner/$repo/index'
 import { Route as OwnerRepoActionsRouteImport } from './routes/$owner/$repo/actions'
 import { Route as OwnerRepoBranchesRouteImport } from './routes/$owner/$repo/branches'
@@ -234,6 +237,11 @@ const WalletRoute = WalletRouteImport.update({
   path: '/wallet',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspacesRoute = WorkspacesRouteImport.update({
+  id: '/workspaces',
+  path: '/workspaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OwnerIndexRoute = OwnerIndexRouteImport.update({
   id: '/$owner/',
   path: '/$owner/',
@@ -253,6 +261,16 @@ const TopicsSlugRoute = TopicsSlugRouteImport.update({
   id: '/topics/$slug',
   path: '/topics/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacesIndexRoute = WorkspacesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkspacesRoute,
+} as any)
+const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
+  id: '/$workspaceId',
+  path: '/$workspaceId',
+  getParentRoute: () => WorkspacesRoute,
 } as any)
 const OwnerRepoIndexRoute = OwnerRepoIndexRouteImport.update({
   id: '/',
@@ -457,10 +475,13 @@ export interface FileRoutesByFullPath {
   '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/gists/$id': typeof GistsIdRoute
   '/topics/$slug': typeof TopicsSlugRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/$owner/': typeof OwnerIndexRoute
+  '/workspaces/': typeof WorkspacesIndexRoute
   '/$owner/$repo/actions': typeof OwnerRepoActionsRoute
   '/$owner/$repo/branches': typeof OwnerRepoBranchesRoute
   '/$owner/$repo/commits': typeof OwnerRepoCommitsRoute
@@ -530,7 +551,9 @@ export interface FileRoutesByTo {
   '/wallet': typeof WalletRoute
   '/gists/$id': typeof GistsIdRoute
   '/topics/$slug': typeof TopicsSlugRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/$owner': typeof OwnerIndexRoute
+  '/workspaces': typeof WorkspacesIndexRoute
   '/$owner/$repo/actions': typeof OwnerRepoActionsRoute
   '/$owner/$repo/branches': typeof OwnerRepoBranchesRoute
   '/$owner/$repo/commits': typeof OwnerRepoCommitsRoute
@@ -599,10 +622,13 @@ export interface FileRoutesById {
   '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/gists/$id': typeof GistsIdRoute
   '/topics/$slug': typeof TopicsSlugRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
   '/$owner/': typeof OwnerIndexRoute
+  '/workspaces/': typeof WorkspacesIndexRoute
   '/$owner/$repo/actions': typeof OwnerRepoActionsRoute
   '/$owner/$repo/branches': typeof OwnerRepoBranchesRoute
   '/$owner/$repo/commits': typeof OwnerRepoCommitsRoute
@@ -672,10 +698,13 @@ export interface FileRouteTypes {
     | '/swarm'
     | '/trending'
     | '/wallet'
+    | '/workspaces'
     | '/$owner/$repo'
     | '/gists/$id'
     | '/topics/$slug'
+    | '/workspaces/$workspaceId'
     | '/$owner/'
+    | '/workspaces/'
     | '/$owner/$repo/actions'
     | '/$owner/$repo/branches'
     | '/$owner/$repo/commits'
@@ -745,7 +774,9 @@ export interface FileRouteTypes {
     | '/wallet'
     | '/gists/$id'
     | '/topics/$slug'
+    | '/workspaces/$workspaceId'
     | '/$owner'
+    | '/workspaces'
     | '/$owner/$repo/actions'
     | '/$owner/$repo/branches'
     | '/$owner/$repo/commits'
@@ -813,10 +844,13 @@ export interface FileRouteTypes {
     | '/swarm'
     | '/trending'
     | '/wallet'
+    | '/workspaces'
     | '/$owner/$repo'
     | '/gists/$id'
     | '/topics/$slug'
+    | '/workspaces/$workspaceId'
     | '/$owner/'
+    | '/workspaces/'
     | '/$owner/$repo/actions'
     | '/$owner/$repo/branches'
     | '/$owner/$repo/commits'
@@ -885,6 +919,7 @@ export interface RootRouteChildren {
   SwarmRoute: typeof SwarmRoute
   TrendingRoute: typeof TrendingRoute
   WalletRoute: typeof WalletRoute
+  WorkspacesRoute: typeof WorkspacesRouteWithChildren
   OwnerRepoRoute: typeof OwnerRepoRouteWithChildren
   TopicsSlugRoute: typeof TopicsSlugRoute
   OwnerIndexRoute: typeof OwnerIndexRoute
@@ -1109,6 +1144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WalletRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspaces': {
+      id: '/workspaces'
+      path: '/workspaces'
+      fullPath: '/workspaces'
+      preLoaderRoute: typeof WorkspacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$owner/': {
       id: '/$owner/'
       path: '/$owner'
@@ -1136,6 +1178,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/topics/$slug'
       preLoaderRoute: typeof TopicsSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/workspaces/': {
+      id: '/workspaces/'
+      path: '/'
+      fullPath: '/workspaces/'
+      preLoaderRoute: typeof WorkspacesIndexRouteImport
+      parentRoute: typeof WorkspacesRoute
+    }
+    '/workspaces/$workspaceId': {
+      id: '/workspaces/$workspaceId'
+      path: '/$workspaceId'
+      fullPath: '/workspaces/$workspaceId'
+      preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
+      parentRoute: typeof WorkspacesRoute
     }
     '/$owner/$repo/': {
       id: '/$owner/$repo/'
@@ -1388,6 +1444,20 @@ const GistsRouteChildren: GistsRouteChildren = {
 
 const GistsRouteWithChildren = GistsRoute._addFileChildren(GistsRouteChildren)
 
+interface WorkspacesRouteChildren {
+  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRoute
+  WorkspacesIndexRoute: typeof WorkspacesIndexRoute
+}
+
+const WorkspacesRouteChildren: WorkspacesRouteChildren = {
+  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRoute,
+  WorkspacesIndexRoute: WorkspacesIndexRoute,
+}
+
+const WorkspacesRouteWithChildren = WorkspacesRoute._addFileChildren(
+  WorkspacesRouteChildren,
+)
+
 interface OwnerRepoIssuesRouteChildren {
   OwnerRepoIssuesNRoute: typeof OwnerRepoIssuesNRoute
 }
@@ -1518,6 +1588,7 @@ const rootRouteChildren: RootRouteChildren = {
   SwarmRoute: SwarmRoute,
   TrendingRoute: TrendingRoute,
   WalletRoute: WalletRoute,
+  WorkspacesRoute: WorkspacesRouteWithChildren,
   OwnerRepoRoute: OwnerRepoRouteWithChildren,
   TopicsSlugRoute: TopicsSlugRoute,
   OwnerIndexRoute: OwnerIndexRoute,

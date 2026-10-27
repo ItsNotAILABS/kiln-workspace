@@ -19,6 +19,7 @@ const PALETTE = [
   { id: "assistants", group: "Platform", label: "Coding assistants", href: "/assistants" },
   { id: "marketplace", group: "Platform", label: "Marketplace", href: "/marketplace" },
   { id: "orgs", group: "Platform", label: "Organizations", href: "/orgs" },
+  { id: "workspaces", group: "Platform", label: "Workspaces", href: "/workspaces" },
   { id: "apps", group: "Platform", label: "Apps & add-ons", href: "/apps" },
   { id: "gists", group: "Platform", label: "Gists", href: "/gists" },
   { id: "cloud", group: "Platform", label: "Encrypted cloud", href: "/cloud" },
