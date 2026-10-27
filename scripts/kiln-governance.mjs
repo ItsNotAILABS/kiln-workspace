@@ -22,6 +22,125 @@ const CAPSULE_VERSION = "kiln.capsule.v1";
 const RECEIPT_VERSION = "kiln.receipt.v1";
 const APPROVAL_VERSION = "kiln.approval.v1";
 
+/**
+ * @typedef {Object} EvidenceMeta
+ * @property {string} schema
+ * @property {string} repoId
+ * @property {string} digest
+ * @property {number} bytes
+ * @property {string} mediaType
+ * @property {string} source
+ * @property {string} visibility
+ * @property {string} createdAt
+ */
+
+/**
+ * @typedef {Object} CapsuleBudget
+ * @property {number} maxInputTokens
+ * @property {number} maxOutputTokens
+ * @property {number} timeoutMs
+ * @property {number} maxToolCalls
+ */
+
+/**
+ * Loose input to compileCapsule: every field is runtime-validated there.
+ * @typedef {Object} CapsuleInput
+ * @property {string} [capsuleId]
+ * @property {string} [repoId]
+ * @property {string} [parentTaskId]
+ * @property {string} [principalId]
+ * @property {string} [contextOwner]
+ * @property {string} [role]
+ * @property {string} [modelId]
+ * @property {string} [objective]
+ * @property {any[]} [constraints]
+ * @property {any[]} [evidenceRefs]
+ * @property {any} [outputSchema]
+ * @property {any[]} [expectedPostconditions]
+ * @property {{ maxInputTokens?: number, maxOutputTokens?: number, timeoutMs?: number, maxToolCalls?: number }} [budget]
+ * @property {string} [policyVersion]
+ * @property {string | null} [expiresAt]
+ */
+
+/**
+ * @typedef {Object} Capsule
+ * @property {string} schema
+ * @property {string} capsuleId
+ * @property {string} repoId
+ * @property {string | null} parentTaskId
+ * @property {string} principalId
+ * @property {string} contextOwner
+ * @property {string} role
+ * @property {string} modelId
+ * @property {string} objective
+ * @property {string[]} constraints
+ * @property {string[]} evidenceRefs
+ * @property {any} outputSchema
+ * @property {string[]} expectedPostconditions
+ * @property {CapsuleBudget} budget
+ * @property {string} policyVersion
+ * @property {string} createdAt
+ * @property {string | null} expiresAt
+ * @property {string} capsuleHash
+ */
+
+/**
+ * @typedef {Object} Approval
+ * @property {string} schema
+ * @property {string} approvalId
+ * @property {string} repoId
+ * @property {string} capsuleHash
+ * @property {string} proposalHash
+ * @property {string} approverId
+ * @property {string[]} scope
+ * @property {string} issuedAt
+ * @property {string} expiresAt
+ * @property {string} approvalHash
+ */
+
+/**
+ * @typedef {Object} DissentEntry
+ * @property {string} source
+ * @property {string} claim
+ * @property {string[]} evidenceRefs
+ */
+
+/**
+ * @typedef {Object} Receipt
+ * @property {string} schema
+ * @property {string} receiptId
+ * @property {string} repoId
+ * @property {number} sequence
+ * @property {string} event
+ * @property {string} actorId
+ * @property {string | null} capsuleHash
+ * @property {string | null} proposalHash
+ * @property {string | null} approvalHash
+ * @property {string[]} artifactHashes
+ * @property {DissentEntry[]} dissent
+ * @property {Record<string, any>} details
+ * @property {string} previousHash
+ * @property {string} createdAt
+ * @property {string} receiptHash
+ */
+
+/**
+ * @typedef {Object} Dissent
+ * @property {string} schema
+ * @property {string} dissentId
+ * @property {string} repoId
+ * @property {string} capsuleHash
+ * @property {string} source
+ * @property {string} claim
+ * @property {string[]} evidenceRefs
+ * @property {string} createdAt
+ * @property {string} dissentHash
+ */
+
+/**
+ * @param {any} value
+ * @returns {any} The value with every object's keys sorted, recursively.
+ */
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
@@ -30,32 +149,57 @@ function canonical(value) {
   return value;
 }
 
+/**
+ * @param {unknown} value Strings are hashed as-is; anything else is hashed as canonical JSON.
+ * @returns {string} Hex SHA-256 digest.
+ */
 export function sha256(value) {
   const body = typeof value === "string" ? value : JSON.stringify(canonical(value));
   return createHash("sha256").update(body).digest("hex");
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} [fallback]
+ * @returns {string}
+ */
 function safeId(value, fallback = "default") {
   const out = String(value || fallback).replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120);
   return out || fallback;
 }
 
+/**
+ * @param {string} repoId
+ * @returns {string} The repo's state directory (created if needed).
+ */
 function repoDir(repoId) {
   const dir = path.join(STATE_ROOT, safeId(repoId));
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
+/**
+ * @param {string} file
+ * @param {unknown} record
+ */
 function appendJsonl(file, record) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify(record) + "\n", { encoding: "utf8", mode: 0o600 });
 }
 
+/**
+ * @param {string} file
+ * @returns {any[]} Parsed records, or [] when the file does not exist.
+ */
 function readJsonl(file) {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
 }
 
+/**
+ * @param {{ repoId: string, content: string, mediaType?: string, source?: string, visibility?: string }} args
+ * @returns {EvidenceMeta}
+ */
 export function putEvidence({ repoId, content, mediaType = "text/plain", source = "runtime", visibility = "private" }) {
   if (typeof content !== "string" || !content.length) throw new Error("evidence content required");
   if (!['private','shared','public'].includes(visibility)) throw new Error("invalid evidence visibility");
@@ -79,6 +223,10 @@ export function putEvidence({ repoId, content, mediaType = "text/plain", source 
   return meta;
 }
 
+/**
+ * @param {{ repoId: string, digest: string }} args
+ * @returns {(EvidenceMeta & { content: string }) | null}
+ */
 export function getEvidence({ repoId, digest }) {
   if (!/^[a-f0-9]{64}$/.test(String(digest || ""))) throw new Error("invalid evidence digest");
   const dir = path.join(repoDir(repoId), "evidence");
@@ -88,9 +236,14 @@ export function getEvidence({ repoId, digest }) {
   return { ...JSON.parse(fs.readFileSync(metaPath, "utf8")), content: fs.readFileSync(bodyPath, "utf8") };
 }
 
+/**
+ * @param {CapsuleInput} [input]
+ * @returns {Capsule}
+ */
 export function compileCapsule(input = {}) {
   const required = ["repoId", "objective", "role", "principalId", "modelId"];
-  for (const key of required) if (!String(input[key] || "").trim()) throw new Error(`${key} required`);
+  const fields = /** @type {Record<string, unknown>} */ (input);
+  for (const key of required) if (!String(fields[key] || "").trim()) throw new Error(`${key} required`);
   const budget = {
     maxInputTokens: Math.max(1, Math.min(Number(input.budget?.maxInputTokens || 8192), 1_000_000)),
     maxOutputTokens: Math.max(1, Math.min(Number(input.budget?.maxOutputTokens || 4096), 250_000)),
@@ -100,9 +253,9 @@ export function compileCapsule(input = {}) {
   const evidenceRefs = [...new Set((input.evidenceRefs || []).map(String))].sort();
   for (const digest of evidenceRefs) {
     if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error(`invalid evidence reference ${digest}`);
-    if (!getEvidence({ repoId: input.repoId, digest })) throw new Error(`missing evidence ${digest}`);
+    if (!getEvidence({ repoId: String(input.repoId), digest })) throw new Error(`missing evidence ${digest}`);
   }
-  const capsule = {
+  const unsigned = {
     schema: CAPSULE_VERSION,
     capsuleId: input.capsuleId || randomUUID(),
     repoId: String(input.repoId),
@@ -121,12 +274,19 @@ export function compileCapsule(input = {}) {
     createdAt: new Date().toISOString(),
     expiresAt: input.expiresAt || null,
   };
-  capsule.capsuleHash = sha256(capsule);
+  // The hash covers the capsule without capsuleHash (validateCapsule deletes
+  // the field before recomputing), so compute it before attaching the field.
+  const capsule = /** @type {Capsule} */ ({ ...unsigned, capsuleHash: sha256(unsigned) });
   const file = path.join(repoDir(capsule.repoId), "capsules.jsonl");
   appendJsonl(file, capsule);
   return capsule;
 }
 
+/**
+ * @param {any} capsule Untrusted capsule record; validated, not assumed.
+ * @param {{ now?: number }} [options]
+ * @returns {{ ok: boolean, reason: string }}
+ */
 export function validateCapsule(capsule, { now = Date.now() } = {}) {
   if (!capsule || capsule.schema !== CAPSULE_VERSION) return { ok: false, reason: "schema" };
   const claimed = capsule.capsuleHash;
@@ -140,13 +300,17 @@ export function validateCapsule(capsule, { now = Date.now() } = {}) {
   return { ok: true, reason: "valid" };
 }
 
+/**
+ * @param {{ repoId: string, capsuleHash: string, proposalHash: string, approverId: string, expiresAt: string, scope?: string[] }} args
+ * @returns {Approval}
+ */
 export function issueApproval({ repoId, capsuleHash, proposalHash, approverId, expiresAt, scope = ["commit"] }) {
   for (const [name, value] of Object.entries({ repoId, capsuleHash, proposalHash, approverId, expiresAt })) {
     if (!String(value || "").trim()) throw new Error(`${name} required`);
   }
   if (!/^[a-f0-9]{64}$/.test(capsuleHash) || !/^[a-f0-9]{64}$/.test(proposalHash)) throw new Error("invalid bound hash");
   if (Date.parse(expiresAt) <= Date.now()) throw new Error("approval must expire in the future");
-  const approval = {
+  const unsigned = {
     schema: APPROVAL_VERSION,
     approvalId: randomUUID(),
     repoId,
@@ -157,11 +321,16 @@ export function issueApproval({ repoId, capsuleHash, proposalHash, approverId, e
     issuedAt: new Date().toISOString(),
     expiresAt,
   };
-  approval.approvalHash = sha256(approval);
+  const approval = /** @type {Approval} */ ({ ...unsigned, approvalHash: sha256(unsigned) });
   appendJsonl(path.join(repoDir(repoId), "approvals.jsonl"), approval);
   return approval;
 }
 
+/**
+ * @param {any} approval Untrusted approval record; validated, not assumed.
+ * @param {{ capsuleHash?: string, proposalHash?: string, requiredScope?: string, now?: number }} [options]
+ * @returns {{ ok: boolean, reason: string }}
+ */
 export function validateApproval(approval, { capsuleHash, proposalHash, requiredScope, now = Date.now() } = {}) {
   if (!approval || approval.schema !== APPROVAL_VERSION) return { ok: false, reason: "schema" };
   const claimed = approval.approvalHash;
@@ -175,12 +344,16 @@ export function validateApproval(approval, { capsuleHash, proposalHash, required
   return { ok: true, reason: "valid" };
 }
 
+/**
+ * @param {{ repoId: string, event: string, actorId: string, capsuleHash?: string | null, proposalHash?: string | null, approvalHash?: string | null, artifactHashes?: string[], details?: Record<string, any>, dissent?: Array<{ source?: string, claim?: string, evidenceRefs?: string[] }> }} args
+ * @returns {Receipt}
+ */
 export function sealReceipt({ repoId, event, actorId, capsuleHash = null, proposalHash = null, approvalHash = null, artifactHashes = [], details = {}, dissent = [] }) {
   if (!repoId || !event || !actorId) throw new Error("repoId, event, actorId required");
   const file = path.join(repoDir(repoId), "receipts.jsonl");
   const existing = readJsonl(file);
   const previousHash = existing.length ? existing[existing.length - 1].receiptHash : "GENESIS";
-  const receipt = {
+  const unsigned = {
     schema: RECEIPT_VERSION,
     receiptId: randomUUID(),
     repoId,
@@ -196,11 +369,15 @@ export function sealReceipt({ repoId, event, actorId, capsuleHash = null, propos
     previousHash,
     createdAt: new Date().toISOString(),
   };
-  receipt.receiptHash = sha256(receipt);
+  const receipt = /** @type {Receipt} */ ({ ...unsigned, receiptHash: sha256(unsigned) });
   appendJsonl(file, receipt);
   return receipt;
 }
 
+/**
+ * @param {{ repoId: string }} args
+ * @returns {{ ok: boolean, count?: number, head?: string, index?: number, reason?: string }}
+ */
 export function verifyReceiptChain({ repoId }) {
   const receipts = readJsonl(path.join(repoDir(repoId), "receipts.jsonl"));
   let previous = "GENESIS";
@@ -216,9 +393,13 @@ export function verifyReceiptChain({ repoId }) {
   return { ok: true, count: receipts.length, head: previous };
 }
 
+/**
+ * @param {{ repoId: string, capsuleHash: string, source: string, claim: string, evidenceRefs?: string[] }} args
+ * @returns {Dissent}
+ */
 export function recordDissent({ repoId, capsuleHash, source, claim, evidenceRefs = [] }) {
   if (!repoId || !capsuleHash || !source || !claim) throw new Error("repoId, capsuleHash, source, claim required");
-  const item = {
+  const unsigned = {
     schema: "kiln.dissent.v1",
     dissentId: randomUUID(),
     repoId,
@@ -228,7 +409,7 @@ export function recordDissent({ repoId, capsuleHash, source, claim, evidenceRefs
     evidenceRefs: evidenceRefs.map(String),
     createdAt: new Date().toISOString(),
   };
-  item.dissentHash = sha256(item);
+  const item = /** @type {Dissent} */ ({ ...unsigned, dissentHash: sha256(unsigned) });
   appendJsonl(path.join(repoDir(repoId), "dissent.jsonl"), item);
   return item;
 }
@@ -242,6 +423,11 @@ export const GOVERNANCE_TOOLS = [
   { name: "kiln_dissent_record", description: "Persist a minority or conflicting conclusion instead of silently averaging it away.", inputSchema: { type: "object", properties: { repoId: { type: "string" }, capsuleHash: { type: "string" }, source: { type: "string" }, claim: { type: "string" }, evidenceRefs: { type: "array", items: { type: "string" } } }, required: ["repoId", "capsuleHash", "source", "claim"] } },
 ];
 
+/**
+ * @param {string} name Governance tool name.
+ * @param {any} [args] Tool arguments, validated by the target function.
+ * @returns {Promise<Record<string, any>>} The tool's record result.
+ */
 export async function runGovernanceTool(name, args = {}) {
   switch (name) {
     case "kiln_evidence_put": return putEvidence(args);

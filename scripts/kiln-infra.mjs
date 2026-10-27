@@ -73,7 +73,8 @@ export async function runInfraTool(name, args = {}) {
       const parsed = await runGovernanceTool(name, args && typeof args === "object" ? args : {});
       return { ok: parsed?.ok !== false, ...parsed, text: JSON.stringify(parsed, null, 2) };
     } catch (error) {
-      return { ok: false, error: error.message, text: error.message };
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message, text: message };
     }
   }
 
