@@ -292,8 +292,40 @@ export interface WorkspaceView {
   description: string;
   repos: string[];
   siteIds: string[];
+  /** Id of the parent workspace (same owner), or null for a root. */
+  parentId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A workspace record plus its nested children (GET /v1/workspaces?tree=1). */
+export interface WorkspaceTreeNode extends WorkspaceView {
+  children: WorkspaceTreeNode[];
+}
+
+/** Lightweight workspace reference used by status parent/children + details. */
+export interface WorkspaceRef {
+  id: string;
+  owner: string;
+  slug: string;
+  name: string;
+}
+
+export interface RepoCommitView {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+/** Context-economical per-repo summary carried on workspace status entries. */
+export interface RepoDetailsSummary {
+  description: string;
+  topics: string[];
+  defaultBranch: string | null;
+  commitCount: number;
+  lastCommit: RepoCommitView | null;
 }
 
 export interface WorkspaceRepoStatus {
@@ -301,6 +333,8 @@ export interface WorkspaceRepoStatus {
   exists: boolean;
   branch: string | null;
   head: { sha: string; shortSha: string; subject: string } | null;
+  /** Present on daemons with the project-details rollout. */
+  details?: RepoDetailsSummary | null;
 }
 
 export interface WorkspaceSiteStatus {
@@ -320,6 +354,82 @@ export interface WorkspaceStatusView {
     repos: Record<string, { present: boolean; coreLabels: string[] }>;
     linked: boolean;
   };
+  /** Nesting fields — absent on daemons predating the nesting rollout. */
+  parent?: WorkspaceRef | null;
+  children?: WorkspaceRef[];
+  rollup?: {
+    descendantCount: number;
+    repos: WorkspaceRepoStatus[];
+    siteIds: string[];
+  };
+}
+
+/** Mirrors a daemon sites-registry record (GET /v1/sites). */
+export interface SiteView {
+  id: string;
+  name: string;
+  frontend: string | null;
+  backend: string | null;
+}
+
+export interface RepoLanguageView {
+  language: string;
+  files: number;
+  bytes: number;
+  pct: number;
+}
+
+export interface RepoReadmeView {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
+/** Latest CI result as recorded by the daemon (lib/ci.mjs readLatest). */
+export interface CiResultView {
+  status?: string;
+  verdict?: string;
+  conclusion?: string;
+  state?: string;
+  result?: string;
+  sha?: string;
+  commit?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  finishedAt?: string;
+  date?: string;
+}
+
+export interface RepoWorkspaceMembership extends WorkspaceRef {
+  parentId: string | null;
+}
+
+/**
+ * The project-details object (GET /v1/repos/:owner/:repo/details) —
+ * derived live from the hosted bare repo; see swarm/lib/repodetails.mjs.
+ * `ci` is the latest CI result object as recorded, or null when no run
+ * has been recorded for the repo.
+ */
+export interface RepoDetailsView {
+  repo: string;
+  owner: string;
+  name: string;
+  createdAt: string | null;
+  description: string;
+  topics: string[];
+  empty: boolean;
+  defaultBranch: string | null;
+  commitCount: number;
+  fileCount: number;
+  treeBytes: number;
+  diskBytes: number;
+  lastCommit: RepoCommitView | null;
+  recentActivity: RepoCommitView[];
+  languages: RepoLanguageView[];
+  readme: RepoReadmeView | null;
+  workspaces: RepoWorkspaceMembership[];
+  site: { id: string; name: string; role: string } | null;
+  ci: CiResultView | null;
 }
 
 /**
@@ -334,6 +444,117 @@ export async function listWorkspaces(owner?: string): Promise<WorkspaceView[]> {
   return data.workspaces ?? [];
 }
 
+/** Workspace roots with nested `children` arrays (GET /v1/workspaces?tree=1). */
+export async function listWorkspaceTree(owner?: string): Promise<WorkspaceTreeNode[]> {
+  const params = new URLSearchParams({ tree: "1" });
+  if (owner) params.set("owner", owner);
+  const data = (await daemonFetch(`/v1/workspaces?${params.toString()}`)) as {
+    workspaces: WorkspaceTreeNode[];
+  };
+  return data.workspaces ?? [];
+}
+
 export async function getWorkspaceStatus(id: string): Promise<WorkspaceStatusView> {
   return (await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`)) as WorkspaceStatusView;
+}
+
+export interface CreateWorkspaceInput {
+  owner: string;
+  slug: string;
+  name: string;
+  description?: string;
+  repos?: string[];
+  siteIds?: string[];
+  parentId?: string;
+}
+
+export async function createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceView> {
+  const data = (await daemonFetch("/v1/workspaces", { method: "POST", body: input })) as {
+    workspace: WorkspaceView;
+  };
+  return data.workspace;
+}
+
+export interface UpdateWorkspacePatch {
+  name?: string;
+  description?: string;
+  addRepos?: string[];
+  removeRepos?: string[];
+  linkSites?: string[];
+  unlinkSites?: string[];
+  /** Present = change parent (workspace id, or null for root); absent = unchanged. */
+  setParent?: string | null;
+}
+
+export async function updateWorkspace(
+  id: string,
+  patch: UpdateWorkspacePatch
+): Promise<WorkspaceView> {
+  const data = (await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: patch,
+  })) as { workspace: WorkspaceView };
+  return data.workspace;
+}
+
+export async function deleteWorkspace(id: string, confirm: string): Promise<void> {
+  await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: { confirm },
+  });
+}
+
+/** Sites from the daemon registry (GET /v1/sites). */
+export async function listSites(): Promise<SiteView[]> {
+  const data = (await daemonFetch("/v1/sites")) as { sites: SiteView[] };
+  return data.sites ?? [];
+}
+
+function unwrapDetails(data: unknown): RepoDetailsView {
+  const d = data as { details?: RepoDetailsView };
+  return (d && typeof d === "object" && d.details ? d.details : data) as RepoDetailsView;
+}
+
+/** Project details for a forge-hosted repo. 404s for repos the forge doesn't host. */
+export async function getRepoDetails(owner: string, repo: string): Promise<RepoDetailsView> {
+  const data = await daemonFetch(
+    `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`
+  );
+  return unwrapDetails(data);
+}
+
+export interface UpdateRepoDetailsPatch {
+  description?: string;
+  topics?: string[];
+}
+
+export async function updateRepoDetails(
+  owner: string,
+  repo: string,
+  patch: UpdateRepoDetailsPatch
+): Promise<RepoDetailsView> {
+  const data = await daemonFetch(
+    `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`,
+    { method: "PATCH", body: patch }
+  );
+  return unwrapDetails(data);
+}
+
+export interface CreatedGitRepoView {
+  owner: string;
+  repo: string;
+  createdAt: string | null;
+}
+
+/** Create a hosted repo on the forge (POST /git/:owner/:repo, bearer). */
+export async function createGitRepo(owner: string, repo: string): Promise<CreatedGitRepoView> {
+  const data = (await daemonFetch(
+    `/git/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    { method: "POST" }
+  )) as { owner?: string; repo?: string; createdAt?: string } | null;
+  return {
+    owner: typeof data?.owner === "string" ? data.owner : owner,
+    repo: typeof data?.repo === "string" ? data.repo : repo,
+    createdAt: typeof data?.createdAt === "string" ? data.createdAt : null,
+  };
 }

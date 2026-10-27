@@ -12,6 +12,28 @@ function repoLine(r: WorkspaceStatusView["repos"][number]) {
   return `${r.repo} — ${r.branch ?? "main"} @ ${r.head.shortSha} · ${r.head.subject}`;
 }
 
+function RepoDetailsSummaryLine({ r }: { r: WorkspaceStatusView["repos"][number] }) {
+  const d = r.details;
+  if (!d) return null;
+  return (
+    <div className="mt-2">
+      {d.description && <p className="text-sm text-muted">{d.description}</p>}
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {d.topics.map((t) => (
+          <span key={t} className="chip">
+            {t}
+          </span>
+        ))}
+        <span className="text-xs text-subtle">
+          {d.commitCount} {d.commitCount === 1 ? "commit" : "commits"}
+          {d.defaultBranch ? ` · ${d.defaultBranch}` : ""}
+          {d.lastCommit ? ` · last: ${d.lastCommit.subject}` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function WorkspaceDetail() {
   const { workspaceId } = Route.useParams();
   const [status, setStatus] = useState<WorkspaceStatusView | null>(null);
@@ -45,6 +67,18 @@ function WorkspaceDetail() {
         <Link to="/workspaces" className="hover:text-seal">
           Workspaces
         </Link>
+        {status?.parent && (
+          <>
+            {" / "}
+            <Link
+              to="/workspaces/$workspaceId"
+              params={{ workspaceId: status.parent.id }}
+              className="hover:text-seal"
+            >
+              {status.parent.name}
+            </Link>
+          </>
+        )}
       </p>
 
       {error && (
@@ -80,20 +114,23 @@ function WorkspaceDetail() {
               const [owner, repo] = r.repo.split("/");
               const linked = status.memory.repos[r.repo]?.present;
               return (
-                <li key={r.repo} className="panel flex items-baseline justify-between gap-4 p-4">
-                  <Link
-                    to="/$owner/$repo"
-                    params={{ owner, repo }}
-                    className="font-mono text-sm hover:text-seal"
-                  >
-                    {repoLine(r)}
-                  </Link>
-                  <span
-                    className={`shrink-0 text-xs ${linked ? "text-green-500" : "text-red-400"}`}
-                    title="KILN Memory workspace core block"
-                  >
-                    {linked ? "memory linked" : "memory link missing"}
-                  </span>
+                <li key={r.repo} className="panel p-4">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <Link
+                      to="/$owner/$repo"
+                      params={{ owner, repo }}
+                      className="font-mono text-sm hover:text-seal"
+                    >
+                      {repoLine(r)}
+                    </Link>
+                    <span
+                      className={`shrink-0 text-xs ${linked ? "text-green-500" : "text-red-400"}`}
+                      title="KILN Memory workspace core block"
+                    >
+                      {linked ? "memory linked" : "memory link missing"}
+                    </span>
+                  </div>
+                  <RepoDetailsSummaryLine r={r} />
                 </li>
               );
             })}
@@ -104,6 +141,65 @@ function WorkspaceDetail() {
           <p className="mt-3 text-xs text-subtle">
             memory linkage: {status.memory.linked ? "complete — every member repo carries the link" : "incomplete"}
           </p>
+
+          {status.children && status.children.length > 0 && (
+            <>
+              <h2 className="mt-10 font-display text-2xl">Child workspaces</h2>
+              <ul className="mt-4 space-y-2">
+                {status.children.map((c) => (
+                  <li key={c.id} className="panel p-4">
+                    <Link
+                      to="/workspaces/$workspaceId"
+                      params={{ workspaceId: c.id }}
+                      className="font-display text-xl hover:text-seal"
+                    >
+                      {c.name}
+                    </Link>
+                    <p className="mt-1 font-mono text-xs text-muted">
+                      {c.owner}/{c.slug}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {status.rollup && (
+            <>
+              <h2 className="mt-10 font-display text-2xl">Rollup</h2>
+              <p className="mt-1 text-xs text-subtle">
+                This workspace and everything nested under it, deduped by repo.
+              </p>
+              <p className="mt-3 text-sm text-muted">
+                {status.rollup.descendantCount}{" "}
+                {status.rollup.descendantCount === 1 ? "descendant workspace" : "descendant workspaces"} ·{" "}
+                {status.rollup.repos.length}{" "}
+                {status.rollup.repos.length === 1 ? "repo" : "repos"} in the subtree ·{" "}
+                {status.rollup.siteIds.length}{" "}
+                {status.rollup.siteIds.length === 1 ? "site" : "sites"} in the subtree
+              </p>
+              <ul className="mt-4 space-y-2">
+                {status.rollup.repos.map((r) => {
+                  const [owner, repo] = r.repo.split("/");
+                  return (
+                    <li key={r.repo} className="panel p-4">
+                      <Link
+                        to="/$owner/$repo"
+                        params={{ owner, repo }}
+                        className="font-mono text-sm hover:text-seal"
+                      >
+                        {repoLine(r)}
+                      </Link>
+                      <RepoDetailsSummaryLine r={r} />
+                    </li>
+                  );
+                })}
+                {status.rollup.repos.length === 0 && (
+                  <li className="panel p-4 text-sm text-muted">No repos anywhere in this subtree yet.</li>
+                )}
+              </ul>
+            </>
+          )}
 
           <h2 className="mt-10 font-display text-2xl">Linked sites</h2>
           <ul className="mt-4 space-y-2">

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { About, CodeToolbar, FileTree, Readme } from "@/components/RepoChrome";
+import { ProjectDetails, ProjectDetailsReadme } from "@/components/ProjectDetails";
 import { allCommits, findRepo, useKiln } from "@/lib/kiln/store";
 
 export const Route = createFileRoute("/$owner/$repo/")({
@@ -34,8 +35,12 @@ function CodeTab() {
         </div>
         <FileTree files={repo.files} owner={owner} name={name} />
         <Readme source={repo.readme} />
+        <ProjectDetailsReadme owner={owner} repo={name} storeReadme={repo.readme} />
       </div>
-      <About repo={repo} />
+      <div className="space-y-4">
+        <About repo={repo} />
+        <ProjectDetails owner={owner} repo={name} />
+      </div>
     </div>
   );
 }

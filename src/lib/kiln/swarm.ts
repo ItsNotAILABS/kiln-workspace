@@ -10,10 +10,21 @@ import {
   verifySwarmReceipts,
   listGitRepos,
   listWorkspaces,
+  listWorkspaceTree,
   getWorkspaceStatus,
+  createWorkspace,
+  updateWorkspace,
+  deleteWorkspace,
+  listSites,
+  getRepoDetails,
+  updateRepoDetails,
+  createGitRepo,
   SwarmDownError,
   type SpawnNodeInput,
   type SubmitJobInput,
+  type CreateWorkspaceInput,
+  type UpdateWorkspacePatch,
+  type UpdateRepoDetailsPatch,
 } from "./swarm-proxy";
 
 /**
@@ -103,10 +114,85 @@ export const swarmGitRepos = createServerFn({ method: "GET" }).handler(async () 
 });
 
 export const swarmWorkspaces = createServerFn({ method: "GET" })
-  .inputValidator((d: { owner?: string }) => d ?? {})
+  .inputValidator((d: { owner?: string; tree?: boolean }) => d ?? {})
   .handler(async ({ data }) => {
     try {
+      if (data?.tree) {
+        return { ok: true as const, workspaces: await listWorkspaceTree(data.owner) };
+      }
       return { ok: true as const, workspaces: await listWorkspaces(data?.owner) };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmCreateWorkspace = createServerFn({ method: "POST" })
+  .inputValidator((d: CreateWorkspaceInput) => d)
+  .handler(async ({ data }) => {
+    try {
+      return { ok: true as const, workspace: await createWorkspace(data) };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmUpdateWorkspace = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string; patch: UpdateWorkspacePatch }) => d)
+  .handler(async ({ data }) => {
+    try {
+      return { ok: true as const, workspace: await updateWorkspace(data.id, data.patch) };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmDeleteWorkspace = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string; confirm: string }) => d)
+  .handler(async ({ data }) => {
+    try {
+      await deleteWorkspace(data.id, data.confirm);
+      return { ok: true as const };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmSites = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    return { ok: true as const, sites: await listSites() };
+  } catch (e) {
+    return fail(e);
+  }
+});
+
+export const swarmRepoDetails = createServerFn({ method: "GET" })
+  .inputValidator((d: { owner: string; repo: string }) => d)
+  .handler(async ({ data }) => {
+    try {
+      return { ok: true as const, details: await getRepoDetails(data.owner, data.repo) };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmUpdateRepoDetails = createServerFn({ method: "POST" })
+  .inputValidator((d: { owner: string; repo: string; patch: UpdateRepoDetailsPatch }) => d)
+  .handler(async ({ data }) => {
+    try {
+      return {
+        ok: true as const,
+        details: await updateRepoDetails(data.owner, data.repo, data.patch),
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  });
+
+export const swarmCreateGitRepo = createServerFn({ method: "POST" })
+  .inputValidator((d: { owner: string; repo: string }) => d)
+  .handler(async ({ data }) => {
+    try {
+      return { ok: true as const, created: await createGitRepo(data.owner, data.repo) };
     } catch (e) {
       return fail(e);
     }
