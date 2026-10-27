@@ -6,7 +6,17 @@ import path from "node:path";
 import url from "node:url";
 import { GOVERNANCE_TOOLS, runGovernanceTool } from "./kiln-governance.mjs";
 
-const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
+const ROOT = (() => {
+  try {
+    return path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
+  } catch {
+    // No usable filesystem module URL (e.g. Cloudflare Workers, where
+    // import.meta.url is undefined): the infra tools shell out to Python and
+    // cannot run there — keep module load non-fatal and let any invocation
+    // fail honestly instead of taking down the whole server bundle.
+    return "/";
+  }
+})();
 const PY = path.join(ROOT, "python");
 
 export const INFRA_TOOLS = [
