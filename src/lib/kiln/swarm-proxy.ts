@@ -53,6 +53,11 @@ function readDaemonJson(): DaemonJson | null {
 }
 
 function readApiToken(): string | null {
+  // Hosted deployments (e.g. the Cloudflare door) carry the token as a
+  // server-side secret env var — there is no state dir on the host.
+  // Locally the state-dir file wins and behavior is unchanged.
+  const fromEnv = process.env.KILN_SWARM_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
   const p = join(swarmStateDir(), "api.token");
   if (!existsSync(p)) return null;
   try {
@@ -81,6 +86,29 @@ function pidAlive(pid: number): boolean {
 export async function getDaemonStatus(): Promise<SwarmDaemonStatus> {
   const dj = readDaemonJson();
   if (!dj || !dj.pid || !pidAlive(dj.pid)) {
+    // Hosted door (no local state dir): the daemon is remote, reached
+    // through its tunnel URL. Probe its health endpoint and report
+    // that truthfully instead of prescribing a local start command
+    // this host cannot run.
+    const remoteUrl = process.env.KILN_SWARM_API_URL;
+    if (!dj && remoteUrl) {
+      try {
+        const r = await fetch(`${remoteUrl}/health`, { signal: AbortSignal.timeout(3000) });
+        const data = (await r.json().catch(() => null)) as { ok?: boolean } | null;
+        if (r.ok && data?.ok) {
+          return { up: true, pid: null, startedAt: null, apiUrl: remoteUrl, fix: null };
+        }
+      } catch {
+        /* unreachable — fall through to the down verdict */
+      }
+      return {
+        up: false,
+        pid: null,
+        startedAt: null,
+        apiUrl: remoteUrl,
+        fix: "the local forge daemon is unreachable through its tunnel — check the daemon on its host machine",
+      };
+    }
     return { up: false, pid: null, startedAt: null, apiUrl: null, fix: SWARM_DOWN_FIX };
   }
   try {
@@ -111,7 +139,7 @@ async function daemonFetch(path: string, init: { method?: string; body?: unknown
   const token = readApiToken();
   if (!token) {
     throw new SwarmDownError(
-      "swarm api.token is missing — run `node swarm.mjs init` in the KILN swarm directory, then start the daemon"
+      "swarm api token is missing — locally: run `node swarm.mjs init` in the KILN swarm directory, then start the daemon; hosted: set the KILN_SWARM_TOKEN secret"
     );
   }
   let res: Response;
