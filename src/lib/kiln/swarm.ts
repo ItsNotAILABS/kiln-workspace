@@ -9,6 +9,7 @@ import {
   getSwarmNodeLogs,
   verifySwarmReceipts,
   listGitRepos,
+  getCapabilities,
   listWorkspaces,
   listWorkspaceTree,
   getWorkspaceStatus,
@@ -125,6 +126,14 @@ export const swarmWorkspaces = createServerFn({ method: "GET" })
       return fail(e);
     }
   });
+
+export const swarmCapabilities = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    return { ok: true as const, capabilities: await getCapabilities() };
+  } catch (e) {
+    return fail(e);
+  }
+});
 
 export const swarmCreateWorkspace = createServerFn({ method: "POST" })
   .inputValidator((d: CreateWorkspaceInput) => d)

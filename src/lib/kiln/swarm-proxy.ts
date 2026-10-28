@@ -472,6 +472,26 @@ export async function listWorkspaces(owner?: string): Promise<WorkspaceView[]> {
   return data.workspaces ?? [];
 }
 
+export interface CapabilityAbilityView {
+  id: string;
+  title: string;
+  endpoints: string[];
+  mcpTools: string[];
+}
+
+export interface CapabilitiesView {
+  version: number;
+  abilities: CapabilityAbilityView[];
+  openapi?: string;
+  docs?: string;
+}
+
+/** The daemon's self-description (GET /v1/capabilities) — the discovery
+ * surface every agent starts from. Live on every call, never cached. */
+export async function getCapabilities(): Promise<CapabilitiesView> {
+  return (await daemonFetch(`/v1/capabilities`)) as CapabilitiesView;
+}
+
 /** Workspace roots with nested `children` arrays (GET /v1/workspaces?tree=1). */
 export async function listWorkspaceTree(owner?: string): Promise<WorkspaceTreeNode[]> {
   const params = new URLSearchParams({ tree: "1" });
