@@ -45,16 +45,6 @@ function studioPromptFromUrl() {
   }
 }
 
-/**
- * Studio — the forge's create home. Everything on this page is a real
- * act with a read-back or a link to the thing it made:
- *   - New workspace (yours, if you're signed in — the operator's, if not)
- *   - New repo on the forge (real git hosting, clone URL and all)
- *   - Import (the agent kit's door — the same one your agents use)
- *   - New agent (session-gated mint, token shown once)
- *   - One-shot build (the original Studio generator, kept as-is)
- * …and the forge's recent workspaces underneath, read live.
- */
 function Studio() {
   let fromRoute = "";
   try {
@@ -62,37 +52,117 @@ function Studio() {
   } catch {
     fromRoute = studioPromptFromUrl();
   }
-  const nav = useNavigate();
+  const [prompt, setPrompt] = useState(fromRoute);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const kiln = useKiln();
+  const nav = useNavigate();
 
+  async function run(e: React.FormEvent) {
+    e.preventDefault();
+    if (!kiln.wallet) kiln.connect("you");
+    setBusy(true);
+    setError("");
+    try {
+      const res = await studioGenerate({ data: { prompt } });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      const files: RepoFile[] = (res.files || []).map((f) => ({
+        path: f.path,
+        language: langOf(f.path),
+        content: f.content,
+        size: f.content.length,
+        sha: f.path,
+        message: "studio genesis",
+        updatedAt: new Date().toISOString(),
+      }));
+      const repo = kiln.createRepo({
+        name: res.name || "studio-project",
+        description: res.description || prompt.slice(0, 140),
+        visibility: "public",
+        kind: "code",
+        files,
+      });
+      if (repo) nav({ to: "/$owner/$repo", params: { owner: repo.owner, repo: repo.name } });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Studio failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+    <div className="relative min-h-[calc(100dvh-3.5rem)]">
+      <video
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30"
+        src="/marketing/lab.mp4"
+        poster="/marketing/lab.jpg"
+        autoPlay
+        muted
+        loop
+        playsInline
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-bg/40 via-bg/80 to-bg" />
+      <div className="relative mx-auto flex min-h-[calc(100dvh-3.5rem)] max-w-3xl flex-col justify-center px-4 py-16">
+        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">Studio</p>
+        <h1 className="mt-3 font-display text-5xl leading-[0.95] sm:text-7xl">One-shot a project</h1>
+        <p className="mt-4 max-w-xl text-muted">
+          Describe the computer. Studio writes a sealed repository — files, README, a working tree you can open, fork, and run.
+        </p>
+        <form onSubmit={run} className="mt-8">
+          <textarea
+            className="input min-h-[7.5rem] text-base"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="A light-client in Rust that verifies Kiln headers…"
+            required
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button type="submit" className="btn-primary btn h-10 px-5" disabled={busy}>
+              {busy ? "Forging…" : "Forge repository"}
+            </button>
+            <span className="text-xs text-subtle">User-initiated · grok-4.5 · capped</span>
+          </div>
+          {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+        </form>
+      </div>
+    </div>
+    <StudioCreate />
+    </>
+  );
+}
+
+/**
+ * Added below the hero (2026-10-28, as an edit — the hero above is the
+ * original page, untouched): the forge's other create doors, each a real
+ * act with a read-back or a link to the thing it made, plus the forge's
+ * recent workspaces read live.
+ */
+function StudioCreate() {
+  const nav = useNavigate();
   const [session, setSession] = useState<string | null>(null);
   const [sessionOwner, setSessionOwner] = useState<string | null>(null);
   const [recent, setRecent] = useState<WorkspaceView[] | null>(null);
   const [recentError, setRecentError] = useState<string | null>(null);
 
-  // workspace form
   const [wsName, setWsName] = useState("");
   const [wsSlug, setWsSlug] = useState("");
   const [wsOwner, setWsOwner] = useState("auro");
   const [wsBusy, setWsBusy] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
 
-  // repo form
   const [repoOwner, setRepoOwner] = useState("auro");
   const [repoName, setRepoName] = useState("");
   const [repoBusy, setRepoBusy] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
 
-  // agent form
   const [agentName, setAgentName] = useState("");
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [freshToken, setFreshToken] = useState<string | null>(null);
-
-  // one-shot generator (the original Studio)
-  const [prompt, setPrompt] = useState(fromRoute);
-  const [genBusy, setGenBusy] = useState(false);
-  const [genError, setGenError] = useState("");
 
   useEffect(() => {
     const s = loadSession();
@@ -174,52 +244,15 @@ function Studio() {
     setAgentName("");
   }
 
-  async function runGenerate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!kiln.wallet) kiln.connect("you");
-    setGenBusy(true);
-    setGenError("");
-    try {
-      const res = await studioGenerate({ data: { prompt } });
-      if (!res.ok) {
-        setGenError(res.error);
-        return;
-      }
-      const files: RepoFile[] = (res.files || []).map((f) => ({
-        path: f.path,
-        language: langOf(f.path),
-        content: f.content,
-        size: f.content.length,
-        sha: f.path,
-        message: "studio genesis",
-        updatedAt: new Date().toISOString(),
-      }));
-      const repo = kiln.createRepo({
-        name: res.name || "studio-project",
-        description: res.description || prompt.slice(0, 140),
-        visibility: "public",
-        kind: "code",
-        files,
-      });
-      if (repo) nav({ to: "/$owner/$repo", params: { owner: repo.owner, repo: repo.name } });
-    } catch (err) {
-      setGenError(err instanceof Error ? err.message : "Studio failed");
-    } finally {
-      setGenBusy(false);
-    }
-  }
-
   const ownerForImport = sessionOwner ?? wsOwner;
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <p className="font-mono text-xs uppercase tracking-widest text-subtle">Studio</p>
-      <h1 className="mt-2 font-display text-5xl leading-[0.95]">Create on the forge</h1>
-      <p className="mt-3 max-w-2xl text-muted">
-        One home for starting things: a workspace to hold the work, a repo to hold the code,
-        an import to bring a project in, an agent to work it — or the one-shot build, which
-        writes a whole repository from a sentence. Everything here acts on the live forge
-        and reads back what it made.
+    <div className="mx-auto max-w-5xl px-4 pb-16">
+      <p className="font-mono text-xs uppercase tracking-widest text-subtle">More ways to create</p>
+      <h2 className="mt-2 font-display text-3xl">Start it on the forge directly</h2>
+      <p className="mt-2 max-w-2xl text-sm text-muted">
+        A workspace to hold the work, a repo to hold the code, an import to bring a project
+        in, an agent to work it.
         {sessionOwner ? (
           <>
             {" "}
@@ -229,7 +262,7 @@ function Studio() {
         ) : null}
       </p>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-2">
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
         <section className="panel p-5">
           <p className="font-display text-lg">New workspace</p>
           <p className="mt-1 text-sm text-muted">
@@ -361,34 +394,9 @@ function Studio() {
         </section>
       </div>
 
-      <section className="panel mt-4 p-5">
-        <p className="font-mono text-xs uppercase tracking-widest text-subtle">One-shot build</p>
-        <p className="mt-2 font-display text-2xl">Describe it — Studio writes the repository</p>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          The original Studio: a sentence in, a sealed repository out — files, README, a
-          working tree you can open, fork, and run.
-        </p>
-        <form onSubmit={runGenerate} className="mt-4">
-          <textarea
-            className="input min-h-[7.5rem] text-base"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="A light-client in Rust that verifies Kiln headers…"
-            required
-          />
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button type="submit" className="btn-primary btn h-10 px-5" disabled={genBusy}>
-              {genBusy ? "Forging…" : "Forge repository"}
-            </button>
-            <span className="text-xs text-subtle">User-initiated · grok-4.5 · capped</span>
-          </div>
-          {genError ? <p className="mt-3 text-sm text-danger">{genError}</p> : null}
-        </form>
-      </section>
-
-      <section className="mt-8">
+      <section className="mt-10">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-2xl">Recent workspaces</h2>
+          <h3 className="font-display text-2xl">Recent workspaces</h3>
           <Link to="/workspaces" className="text-sm text-muted underline">
             All workspaces
           </Link>

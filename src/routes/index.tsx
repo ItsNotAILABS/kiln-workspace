@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { VideoFrame } from "@/components/VideoFrame";
 import { ForgeDoors, ForgeVersion } from "@/components/ForgeVersion";
+import { allRepos, starCount, useKiln } from "@/lib/kiln/store";
 import {
   swarmCapabilities,
   swarmGitRepos,
@@ -18,23 +20,18 @@ interface LiveFacts {
   abilityCount: number;
 }
 
-/**
- * The KILN homepage — the front door of the pocketnova.app protocol.
- *
- * The story, in the order a newcomer needs it: one forge, organized
- * into workspaces, where people hold accounts and their agents hold
- * scoped identities — reachable through two doors (this cloud door and
- * the app on the forge's own machine) that can never drift, because
- * neither stores anything.
- *
- * Every number on this page is read live from the forge API when the
- * page loads. If the forge doesn't answer, the page says so — it
- * never prints an invented count.
- */
 function Home() {
+  const kiln = useKiln();
+  const featured = allRepos(kiln)
+    .filter((r) => r.visibility === "public")
+    .sort((a, b) => starCount(b, kiln) - starCount(a, kiln))
+    .slice(0, 6);
+
+  // Live forge facts for the protocol section below — read from the
+  // forge API at load; if the forge doesn't answer, the section says
+  // so instead of printing invented numbers.
   const [facts, setFacts] = useState<LiveFacts | null>(null);
   const [factsError, setFactsError] = useState<string | null>(null);
-
   useEffect(() => {
     let on = true;
     Promise.all([
@@ -64,131 +61,135 @@ function Home() {
       on = false;
     };
   }, []);
-
   return (
     <div className="pb-8">
-      <section className="px-1 pt-10 sm:pt-16">
-        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">
-          KILN · the pocketnova.app protocol
-        </p>
-        <h1 className="mt-3 max-w-3xl font-display text-5xl leading-[0.95] tracking-tight sm:text-7xl">
-          One forge for people and their agents
-        </h1>
-        <p className="mt-5 max-w-2xl text-pretty text-base text-muted sm:text-lg">
-          KILN is where work lives: git repos grouped into <strong>workspaces</strong>,
-          owned by <strong>people with accounts</strong>, worked by{" "}
-          <strong>agents with scoped identities</strong> — every AI welcome, none of them
-          root. What changes through any door is immediately true through all of them,
-          because there is only ever one forge.
-        </p>
-        <div className="mt-7 flex flex-wrap gap-2">
-          <Link to="/welcome" className="btn-primary btn h-10 px-5">
-            Get started
-          </Link>
-          <Link to="/join" className="btn h-10 px-5">
-            Create account
-          </Link>
-          <Link to="/studio" search={{ prompt: "" }} className="btn h-10 px-5">
-            Open Studio
+      <section className="relative overflow-hidden rounded-xl border border-border">
+        <video className="aspect-[16/8] w-full object-cover sm:aspect-[21/9]" src="/marketing/hero.mp4" poster="/marketing/hero.jpg" autoPlay muted loop playsInline />
+        <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
+        {/* In-flow on mobile: the absolute overlay clips the headline when the
+            16/8 video is shorter than the text block. Overlay only on sm+. */}
+        <div className="relative px-5 py-8 sm:absolute sm:inset-x-0 sm:bottom-0 sm:px-10 sm:py-12">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">Source control · L1</p>
+          <h1 className="mt-3 max-w-3xl font-display text-4xl leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
+            The repository is the computer
+          </h1>
+          <p className="mt-4 max-w-xl text-pretty text-base text-muted sm:text-lg">
+            A sealed folder. A live runtime. A Merkle tree you can sit in.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Link to="/studio" search={{ prompt: "" }} className="btn-primary btn h-10 px-5">
+              Open Studio
+            </Link>
+            <Link to="/new" className="btn h-10 px-5">
+              New repository
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-16 grid gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Runtime</p>
+          <h2 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl">The tree is the runtime</h2>
+          <p className="mt-4 max-w-md text-muted">
+            Open a repo and you get a computer: kilnsh, GPU, folder memory, a live preview of the working tree. Agents are processes on it. Issues lock KLN.
+          </p>
+          <Link to="/explore" search={{ q: "" }} className="mt-5 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+            Explore the forge <ArrowRight className="size-3.5" />
           </Link>
         </div>
+        <VideoFrame src="/marketing/computer.mp4" poster="/marketing/computer.jpg" caption="kilnsh on a sealed tree" />
+      </section>
 
-        <div className="mt-8 font-mono text-sm text-muted">
+      <section className="mt-16 grid gap-10 lg:grid-cols-[0.98fr_1.02fr] lg:items-center">
+        <VideoFrame src="/marketing/git.mp4" poster="/marketing/git.jpg" caption="Every push settles" className="lg:order-1" />
+        <div className="lg:order-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Git</p>
+          <h2 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl">Git, rewritten as a computer</h2>
+          <p className="mt-4 max-w-md text-muted">
+            Clone, commit, push — the verbs you already know. Under them: commit transactions, AES-256-GCM leaves, viewer grants with TTL. GitHub’s surface, a chain underneath.
+          </p>
+          <Link to="/new" search={{ tab: "import" }} className="mt-5 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+            Import a GitHub tree <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+      </section>
+
+      <section className="mt-16 grid gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Memory</p>
+          <h2 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl">4D folder memory</h2>
+          <p className="mt-4 max-w-md text-muted">
+            50 GiB per folder. 4 MiB Merkle leaves. Occupied by agents. The same lattice that stores the tree boots a capsule — a live preview of the site, the app, the stream.
+          </p>
+          <Link to="/architecture" className="mt-5 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+            Read the architecture <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+        <VideoFrame src="/marketing/lattice.mp4" poster="/marketing/lattice.jpg" caption="Hilbert-painted cells" />
+      </section>
+
+      {/* Added 2026-10-28 (edit, not a rewrite): the pocketnova.app
+          protocol layer — workspaces, accounts, agents — with every
+          number read live from the forge API. */}
+      <section className="mt-20">
+        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">The pocketnova.app protocol</p>
+        <h2 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl">Workspaces for people and their agents</h2>
+        <p className="mt-4 max-w-2xl text-muted">
+          Repos group into <strong>workspaces</strong> owned by <strong>people with accounts</strong>,
+          and worked by <strong>agents with scoped identities</strong> — every AI welcome, none of
+          them root. What changes through any door is immediately true through all of them, because
+          there is only ever one forge.
+        </p>
+        <p className="mt-4 font-mono text-sm text-muted">
           {factsError ? (
-            <p>
-              Live counts unavailable right now — the forge didn't answer ({factsError}).
-              This page prints real numbers or none.
-            </p>
+            <>Live counts unavailable right now — the forge didn't answer ({factsError}). This page prints real numbers or none.</>
           ) : facts === null ? (
-            <p>Reading the forge…</p>
+            <>Reading the forge…</>
           ) : (
-            <p>
+            <>
               <span className="text-fg">{facts.workspaceCount}</span> workspaces ·{" "}
               <span className="text-fg">{facts.repoCount}</span> repos ·{" "}
-              <span className="text-fg">{facts.abilityCount}</span> abilities — read live
-              from the forge just now
-            </p>
+              <span className="text-fg">{facts.abilityCount}</span> abilities — read live from the forge just now
+            </>
           )}
-        </div>
-      </section>
-
-      <section className="mt-16 grid gap-4 md:grid-cols-3">
-        <div className="panel p-5">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
-            Organize
-          </p>
-          <h2 className="mt-2 font-display text-2xl">Workspaces</h2>
-          <p className="mt-2 text-sm text-muted">
-            Repos and sites grouped under one owner, nestable into trees, with a live
-            status rollup and per-repo project details computed from the bare repos
-            themselves. A product, its repos, its site — one object.
-          </p>
-          <Link
-            to="/workspaces"
-            className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline"
-          >
-            Browse workspaces <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-        <div className="panel p-5">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
-            Identify
-          </p>
-          <h2 className="mt-2 font-display text-2xl">Accounts + agents</h2>
-          <p className="mt-2 text-sm text-muted">
-            A person signs up and owns a namespace. Their agents get their own identities —
-            scoped tokens, minted by the owner, revocable, shown once. An agent acts as
-            its human, inside its scopes, and can never reach another account's work.
-          </p>
-          <Link
-            to="/join"
-            className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline"
-          >
-            Create your account <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-        <div className="panel p-5">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
-            Connect
-          </p>
-          <h2 className="mt-2 font-display text-2xl">Every door, one forge</h2>
-          <p className="mt-2 text-sm text-muted">
-            REST, an installable SDK + CLI kit, and an MCP server — vendor-neutral, built
-            for any AI. The agent flow is five steps: discover, install, import, organize,
-            verify. A fresh agent can cold-start from the docs alone; one did, and the kit
-            carries its fixes.
-          </p>
-          <Link
-            to="/agents"
-            className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline"
-          >
-            The agent flow <ArrowRight className="size-3.5" />
-          </Link>
-        </div>
-      </section>
-
-      <section className="mt-16">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">
-              On the forge, live
+        </p>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <div className="panel p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Organize</p>
+            <h3 className="mt-2 font-display text-2xl">Workspaces</h3>
+            <p className="mt-2 text-sm text-muted">
+              Repos and sites grouped under one owner, nestable into trees, with a live status
+              rollup and per-repo project details computed from the bare repos themselves.
             </p>
-            <h2 className="mt-2 font-display text-3xl sm:text-4xl">Workspaces</h2>
+            <Link to="/workspaces" className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+              Browse workspaces <ArrowRight className="size-3.5" />
+            </Link>
           </div>
-          <Link to="/workspaces" className="text-sm text-muted underline">
-            All workspaces
-          </Link>
+          <div className="panel p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Identify</p>
+            <h3 className="mt-2 font-display text-2xl">Accounts + agents</h3>
+            <p className="mt-2 text-sm text-muted">
+              A person signs up and owns a namespace. Their agents get scoped, revocable tokens —
+              minted by the owner, shown once — and act as their human, inside their scopes only.
+            </p>
+            <Link to="/join" className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+              Create your account <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+          <div className="panel p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Connect</p>
+            <h3 className="mt-2 font-display text-2xl">Every door, one forge</h3>
+            <p className="mt-2 text-sm text-muted">
+              REST, an installable SDK + CLI kit, and an MCP server — vendor-neutral, built for any
+              AI. The agent flow is five steps: discover, install, import, organize, verify.
+            </p>
+            <Link to="/agents" className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+              The agent flow <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
         </div>
-        {factsError ? (
-          <p className="mt-4 text-sm text-muted">
-            Not shown right now — the forge didn't answer, and this section is read live or
-            not at all.
-          </p>
-        ) : facts === null ? (
-          <p className="mt-4 text-sm text-muted">Loading…</p>
-        ) : facts.workspaces.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No workspaces yet — yours could be first.</p>
-        ) : (
+        {facts && facts.workspaces.length > 0 ? (
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {facts.workspaces.map((w) => (
               <Link
@@ -198,60 +199,71 @@ function Home() {
                 className="panel group block p-4 transition-colors hover:border-seal"
               >
                 <p className="font-display text-lg">{w.name}</p>
-                <p className="font-mono text-xs text-subtle">
-                  {w.owner}/{w.slug}
-                </p>
+                <p className="font-mono text-xs text-subtle">{w.owner}/{w.slug}</p>
                 {w.description ? (
                   <p className="mt-2 line-clamp-2 text-sm text-muted">{w.description}</p>
                 ) : null}
                 <p className="mt-3 text-[11px] text-subtle">
                   {w.repos.length} repo{w.repos.length === 1 ? "" : "s"}
-                  {w.siteIds.length
-                    ? ` · ${w.siteIds.length} site${w.siteIds.length === 1 ? "" : "s"}`
-                    : ""}
+                  {w.siteIds.length ? ` · ${w.siteIds.length} site${w.siteIds.length === 1 ? "" : "s"}` : ""}
                 </p>
               </Link>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className="mt-16">
-        <ForgeVersion />
-        <ForgeDoors />
-      </section>
-
-      <section className="panel mt-16 p-8 sm:p-10">
-        <h2 className="font-display text-3xl leading-[0.95] sm:text-4xl">
-          Bring your AI. Bring your work.
-        </h2>
-        <p className="mt-3 max-w-xl text-muted">
-          Four steps — account, workspace, agent, import — and both of you are building on
-          the same forge, under the same honest rules: real or labeled, verified by
-          read-back, nothing faked.
-        </p>
+        ) : null}
         <div className="mt-6 flex flex-wrap gap-2">
-          <Link to="/welcome" className="btn-primary btn h-10 px-5">
-            Start the walk
-          </Link>
-          <Link to="/agents" className="btn h-10 px-5">
-            For agents
-          </Link>
+          <Link to="/welcome" className="btn-primary btn h-10 px-5">Get started</Link>
+          <Link to="/join" className="btn h-10 px-5">Create account</Link>
+        </div>
+        <div className="mt-8">
+          <ForgeVersion />
+          <ForgeDoors />
+        </div>
+      </section>
+
+      <section className="mt-20">
+        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">On the forge</p>
+        <h2 className="mt-3 font-display text-3xl sm:text-4xl">Public trees</h2>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {featured.map((r) => (
+            <Link key={r.id} to="/$owner/$repo" params={{ owner: r.owner, repo: r.name }} className="panel group p-4 transition-colors hover:border-seal">
+              <p className="font-mono text-sm">
+                <span className="text-seal">{r.owner}</span>
+                <span className="text-subtle"> / </span>
+                {r.name}
+              </p>
+              <p className="mt-2 line-clamp-2 text-sm text-muted">{r.description}</p>
+              <p className="mt-3 flex gap-3 text-[11px] text-subtle">
+                <span>{r.language}</span>
+                <span className="tabular-nums">{starCount(r, kiln)} stars</span>
+              </p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-16 overflow-hidden rounded-xl border border-border">
+        <div className="grid lg:grid-cols-2">
+          <VideoFrame src="/marketing/merkle.mp4" poster="/marketing/merkle.jpg" className="rounded-none border-0" />
+          <div className="flex flex-col justify-center p-8 sm:p-12">
+            <h2 className="font-display text-4xl leading-[0.95]">Open the Studio</h2>
+            <p className="mt-4 max-w-md text-muted">One prompt. A sealed repository with a computer, a preview, and a resident agent. No empty README.</p>
+            <Link to="/studio" search={{ prompt: "" }} className="btn-primary btn mt-6 h-10 w-fit px-5">
+              Open Studio
+            </Link>
+          </div>
         </div>
       </section>
 
       <footer className="mt-20 grid gap-8 border-t border-border pt-8 text-sm text-muted sm:grid-cols-4">
         <div>
           <p className="font-display text-lg text-fg">KILN</p>
-          <p className="mt-2 max-w-xs">
-            The forge of the pocketnova.app protocol — for people and all AI.
-            ItsNotAI LABS.
-          </p>
+          <p className="mt-2 max-w-xs">The repository is the computer. Claimed 2026, ItsNotAI LABS.</p>
         </div>
         {[
-          ["Product", ["/workspaces", "Workspaces"], ["/explore", "Explore"], ["/studio", "Studio"], ["/pricing", "Pricing"]],
-          ["Create", ["/welcome", "Get started"], ["/join", "Create account"], ["/studio", "Studio"], ["/agents", "Import a project"]],
-          ["Protocol", ["/agents", "Agents"], ["/mcp", "MCP"], ["/architecture", "Architecture"], ["/papers", "Papers"]],
+          ["Product", ["/explore", "Explore"], ["/marketplace", "Marketplace"], ["/pricing", "Pricing"], ["/apps", "Apps"]],
+          ["Create", ["/studio", "Studio"], ["/new", "New repository"], ["/new?tab=import", "Import GitHub"], ["/gists", "Gists"]],
+          ["Docs", ["/start", "Get started"], ["/agents", "Agents"], ["/architecture", "Architecture"], ["/papers", "Papers"], ["/cli", "CLI"], ["/mcp", "MCP"]],
         ].map(([title, ...links]) => (
           <div key={String(title)}>
             <p className="text-[11px] uppercase tracking-[0.16em] text-subtle">{title as string}</p>
