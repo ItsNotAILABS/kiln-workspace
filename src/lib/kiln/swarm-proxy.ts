@@ -33,7 +33,17 @@ export class SwarmDownError extends Error {
 }
 
 export function swarmStateDir(): string {
-  return process.env.KILN_SWARM_DIR || join(homedir(), ".kiln-swarm");
+  if (process.env.KILN_SWARM_DIR) return process.env.KILN_SWARM_DIR;
+  const home = join(homedir(), ".kiln-swarm");
+  if (existsSync(join(home, "api.token"))) return home;
+  // The forge app service runs as root (HOME=/root) while the swarm state
+  // lives under the architect's home — fall back to it so the local door
+  // finds the token whichever user the service runs as. (A systemd
+  // drop-in carried this before; /etc does not survive VM replacement,
+  // so the resolution lives here, in code.)
+  const architect = "/home/hatch/.kiln-swarm";
+  if (existsSync(join(architect, "api.token"))) return architect;
+  return home;
 }
 
 interface DaemonJson {
