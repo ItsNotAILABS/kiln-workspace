@@ -494,7 +494,16 @@ function runChild(cmd, args, { cwd, timeout = 4000, input } = {}) {
   });
 }
 
-const COMPUTER_ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "computers");
+const COMPUTER_ROOT = (() => {
+  try {
+    return path.join(path.dirname(new URL(import.meta.url).pathname), "..", "computers");
+  } catch {
+    // No usable module URL (e.g. Cloudflare Workers, where import.meta.url
+    // is undefined): computer workdirs live on a local filesystem and cannot
+    // exist there — keep module load non-fatal; use fails honestly later.
+    return "/computers";
+  }
+})();
 
 /** @param {unknown} repoId @returns {string} */
 function safeRepoDir(repoId) {
