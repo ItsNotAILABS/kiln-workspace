@@ -22,6 +22,7 @@ import { Route as FleetRouteImport } from './routes/fleet'
 import { Route as GistsRouteImport } from './routes/gists'
 import { Route as GpuRouteImport } from './routes/gpu'
 import { Route as IssuesRouteImport } from './routes/issues'
+import { Route as JoinRouteImport } from './routes/join'
 import { Route as MarketplaceRouteImport } from './routes/marketplace'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ModelsRouteImport } from './routes/models'
@@ -41,6 +42,7 @@ import { Route as StudioRouteImport } from './routes/studio'
 import { Route as SwarmRouteImport } from './routes/swarm'
 import { Route as TrendingRouteImport } from './routes/trending'
 import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as WorkspacesRouteImport } from './routes/workspaces'
 import { Route as OwnerIndexRouteImport } from './routes/$owner/index'
 import { Route as OwnerRepoRouteImport } from './routes/$owner/$repo'
@@ -148,6 +150,11 @@ const IssuesRoute = IssuesRouteImport.update({
   path: '/issues',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JoinRoute = JoinRouteImport.update({
+  id: '/join',
+  path: '/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MarketplaceRoute = MarketplaceRouteImport.update({
   id: '/marketplace',
   path: '/marketplace',
@@ -241,6 +248,11 @@ const TrendingRoute = TrendingRouteImport.update({
 const WalletRoute = WalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspacesRoute = WorkspacesRouteImport.update({
@@ -463,6 +475,7 @@ export interface FileRoutesByFullPath {
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
+  '/join': typeof JoinRoute
   '/marketplace': typeof MarketplaceRoute
   '/mcp': typeof McpRoute
   '/models': typeof ModelsRoute
@@ -482,6 +495,7 @@ export interface FileRoutesByFullPath {
   '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
+  '/welcome': typeof WelcomeRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/gists/$id': typeof GistsIdRoute
@@ -538,6 +552,7 @@ export interface FileRoutesByTo {
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
+  '/join': typeof JoinRoute
   '/marketplace': typeof MarketplaceRoute
   '/mcp': typeof McpRoute
   '/models': typeof ModelsRoute
@@ -557,6 +572,7 @@ export interface FileRoutesByTo {
   '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
+  '/welcome': typeof WelcomeRoute
   '/gists/$id': typeof GistsIdRoute
   '/topics/$slug': typeof TopicsSlugRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
@@ -612,6 +628,7 @@ export interface FileRoutesById {
   '/gists': typeof GistsRouteWithChildren
   '/gpu': typeof GpuRoute
   '/issues': typeof IssuesRoute
+  '/join': typeof JoinRoute
   '/marketplace': typeof MarketplaceRoute
   '/mcp': typeof McpRoute
   '/models': typeof ModelsRoute
@@ -631,6 +648,7 @@ export interface FileRoutesById {
   '/swarm': typeof SwarmRoute
   '/trending': typeof TrendingRoute
   '/wallet': typeof WalletRoute
+  '/welcome': typeof WelcomeRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/gists/$id': typeof GistsIdRoute
@@ -689,6 +707,7 @@ export interface FileRouteTypes {
     | '/gists'
     | '/gpu'
     | '/issues'
+    | '/join'
     | '/marketplace'
     | '/mcp'
     | '/models'
@@ -708,6 +727,7 @@ export interface FileRouteTypes {
     | '/swarm'
     | '/trending'
     | '/wallet'
+    | '/welcome'
     | '/workspaces'
     | '/$owner/$repo'
     | '/gists/$id'
@@ -764,6 +784,7 @@ export interface FileRouteTypes {
     | '/gists'
     | '/gpu'
     | '/issues'
+    | '/join'
     | '/marketplace'
     | '/mcp'
     | '/models'
@@ -783,6 +804,7 @@ export interface FileRouteTypes {
     | '/swarm'
     | '/trending'
     | '/wallet'
+    | '/welcome'
     | '/gists/$id'
     | '/topics/$slug'
     | '/workspaces/$workspaceId'
@@ -837,6 +859,7 @@ export interface FileRouteTypes {
     | '/gists'
     | '/gpu'
     | '/issues'
+    | '/join'
     | '/marketplace'
     | '/mcp'
     | '/models'
@@ -856,6 +879,7 @@ export interface FileRouteTypes {
     | '/swarm'
     | '/trending'
     | '/wallet'
+    | '/welcome'
     | '/workspaces'
     | '/$owner/$repo'
     | '/gists/$id'
@@ -913,6 +937,7 @@ export interface RootRouteChildren {
   GistsRoute: typeof GistsRouteWithChildren
   GpuRoute: typeof GpuRoute
   IssuesRoute: typeof IssuesRoute
+  JoinRoute: typeof JoinRoute
   MarketplaceRoute: typeof MarketplaceRoute
   McpRoute: typeof McpRoute
   ModelsRoute: typeof ModelsRoute
@@ -932,6 +957,7 @@ export interface RootRouteChildren {
   SwarmRoute: typeof SwarmRoute
   TrendingRoute: typeof TrendingRoute
   WalletRoute: typeof WalletRoute
+  WelcomeRoute: typeof WelcomeRoute
   WorkspacesRoute: typeof WorkspacesRouteWithChildren
   OwnerRepoRoute: typeof OwnerRepoRouteWithChildren
   TopicsSlugRoute: typeof TopicsSlugRoute
@@ -1029,6 +1055,13 @@ declare module '@tanstack/react-router' {
       path: '/issues'
       fullPath: '/issues'
       preLoaderRoute: typeof IssuesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join': {
+      id: '/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof JoinRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/marketplace': {
@@ -1162,6 +1195,13 @@ declare module '@tanstack/react-router' {
       path: '/wallet'
       fullPath: '/wallet'
       preLoaderRoute: typeof WalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspaces': {
@@ -1590,6 +1630,7 @@ const rootRouteChildren: RootRouteChildren = {
   GistsRoute: GistsRouteWithChildren,
   GpuRoute: GpuRoute,
   IssuesRoute: IssuesRoute,
+  JoinRoute: JoinRoute,
   MarketplaceRoute: MarketplaceRoute,
   McpRoute: McpRoute,
   ModelsRoute: ModelsRoute,
@@ -1609,6 +1650,7 @@ const rootRouteChildren: RootRouteChildren = {
   SwarmRoute: SwarmRoute,
   TrendingRoute: TrendingRoute,
   WalletRoute: WalletRoute,
+  WelcomeRoute: WelcomeRoute,
   WorkspacesRoute: WorkspacesRouteWithChildren,
   OwnerRepoRoute: OwnerRepoRouteWithChildren,
   TopicsSlugRoute: TopicsSlugRoute,

@@ -34,6 +34,8 @@ const PALETTE = [
   { id: "gpu", group: "Tools", label: "WebGPU", href: "/gpu" },
   { id: "mcp", group: "Tools", label: "MCP", href: "/mcp" },
   { id: "agents", group: "Tools", label: "Agents", href: "/agents" },
+  { id: "welcome", group: "Create", label: "Get started", href: "/welcome" },
+  { id: "join", group: "Tools", label: "Join / sign in", href: "/join" },
   { id: "fleet", group: "Tools", label: "Fleet status", href: "/fleet" },
   { id: "shipaton", group: "Platform", label: "Shipaton", href: "/shipaton" },
 ];

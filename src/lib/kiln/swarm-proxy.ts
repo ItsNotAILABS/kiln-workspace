@@ -142,14 +142,31 @@ async function daemonFetch(path: string, init: { method?: string; body?: unknown
       "swarm api token is missing — locally: run `node swarm.mjs init` in the KILN swarm directory, then start the daemon; hosted: set the KILN_SWARM_TOKEN secret"
     );
   }
+  return daemonFetchAs(path, token, { ...init, operator: true });
+}
+
+/**
+ * Daemon call with an explicit bearer (or none). The account system
+ * needs all three shapes: NO bearer for the public bootstrap routes
+ * (signup/login — sending the operator token there would silently
+ * grant the privileged namespace-claim path), the account SESSION
+ * bearer for account-scoped routes, and the operator token (the
+ * daemonFetch default). Errors surface the daemon's own message
+ * verbatim, including its 401s — for account calls a 401 means a bad
+ * or expired session, not a re-inited daemon.
+ */
+async function daemonFetchAs(
+  path: string,
+  bearer: string | null,
+  init: { method?: string; body?: unknown; operator?: boolean } = {}
+): Promise<unknown> {
   let res: Response;
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (bearer) headers.authorization = "Bearer " + bearer;
   try {
     res = await fetch(daemonApiUrl() + path, {
       method: init.method || "GET",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
+      headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
       signal: AbortSignal.timeout(15000),
     });
@@ -157,7 +174,7 @@ async function daemonFetch(path: string, init: { method?: string; body?: unknown
     throw new SwarmDownError("cannot reach the swarm daemon API — it may be down");
   }
   const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (res.status === 401) {
+  if (res.status === 401 && init.operator) {
     throw new Error("swarm API rejected the token (401) — the daemon may have been re-inited");
   }
   if (!res.ok) throw new Error(data.error || `swarm API HTTP ${res.status}`);
@@ -490,6 +507,112 @@ export interface CapabilitiesView {
  * surface every agent starts from. Live on every call, never cached. */
 export async function getCapabilities(): Promise<CapabilitiesView> {
   return (await daemonFetch(`/v1/capabilities`)) as CapabilitiesView;
+}
+
+// ---------------------------------------------------------------------------
+// Accounts + agent identities (daemon lib/accounts.mjs; docs/ACCOUNTS.md).
+// The web doors for the forge's own account system. Signup/login are
+// public bootstrap calls — they go out with NO bearer on purpose:
+// presenting the operator token would silently take the privileged
+// namespace-claim path. Everything else here carries the caller's
+// session token, forwarded from the browser by the server functions;
+// the daemon enforces owner scoping against it.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the daemon's accountPublic (never carries any hash). */
+export interface AccountView {
+  id: string;
+  email: string;
+  name: string;
+  owner: string;
+  createdAt: string;
+}
+
+/** Mirrors the daemon's agentPublic (never carries the token or its hash). */
+export interface AgentIdentityView {
+  id: string;
+  accountId: string;
+  name: string;
+  scopes: string[];
+  createdAt: string;
+  revoked: boolean;
+}
+
+/** Are the account routes live on the daemon yet? They ride the
+ *  daemon's Doctor-owned boots, so the honest UI state comes from the
+ *  capability list, not from trying and failing. */
+export async function accountsLive(): Promise<boolean> {
+  const caps = await getCapabilities();
+  return caps.abilities.some((a) => a.id === "accounts");
+}
+
+export async function signupAccount(input: {
+  email: string; name: string; owner: string; password: string;
+}): Promise<AccountView> {
+  const r = (await daemonFetchAs(`/v1/accounts`, null, { method: "POST", body: input })) as {
+    account: AccountView;
+  };
+  return r.account;
+}
+
+export async function loginAccount(input: { email: string; password: string }): Promise<{
+  account: AccountView; sessionToken: string; expiresAt: string;
+}> {
+  return (await daemonFetchAs(`/v1/accounts/login`, null, { method: "POST", body: input })) as {
+    account: AccountView; sessionToken: string; expiresAt: string;
+  };
+}
+
+export async function getMe(session: string): Promise<{
+  account: AccountView;
+  principal: { kind: string; agent?: AgentIdentityView };
+}> {
+  return (await daemonFetchAs(`/v1/accounts/me`, session)) as {
+    account: AccountView;
+    principal: { kind: string; agent?: AgentIdentityView };
+  };
+}
+
+export async function listMyAgents(session: string): Promise<AgentIdentityView[]> {
+  const r = (await daemonFetchAs(`/v1/accounts/me/agents`, session)) as {
+    agents: AgentIdentityView[];
+  };
+  return r.agents;
+}
+
+export async function createMyAgent(
+  session: string,
+  input: { name: string; scopes?: string[] }
+): Promise<{ agent: AgentIdentityView; token: string }> {
+  return (await daemonFetchAs(`/v1/accounts/me/agents`, session, {
+    method: "POST",
+    body: input,
+  })) as { agent: AgentIdentityView; token: string };
+}
+
+export async function revokeMyAgent(session: string, id: string): Promise<AgentIdentityView> {
+  const r = (await daemonFetchAs(`/v1/accounts/me/agents/${encodeURIComponent(id)}`, session, {
+    method: "DELETE",
+  })) as { agent: AgentIdentityView };
+  return r.agent;
+}
+
+/** Workspaces as the signed-in account sees them: the daemon scopes
+ *  the list to the account's own namespace when the bearer is a
+ *  session (operator calls elsewhere keep the full view). */
+export async function listWorkspacesAs(session: string): Promise<WorkspaceView[]> {
+  const r = (await daemonFetchAs(`/v1/workspaces`, session)) as { workspaces: WorkspaceView[] };
+  return r.workspaces;
+}
+
+export async function createWorkspaceAs(
+  session: string,
+  input: CreateWorkspaceInput
+): Promise<WorkspaceView> {
+  const r = (await daemonFetchAs(`/v1/workspaces`, session, { method: "POST", body: input })) as {
+    workspace: WorkspaceView;
+  };
+  return r.workspace;
 }
 
 /** Workspace roots with nested `children` arrays (GET /v1/workspaces?tree=1). */
