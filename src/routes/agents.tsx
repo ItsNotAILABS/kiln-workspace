@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { swarmCapabilities } from "@/lib/kiln/swarm";
 import type { CapabilitiesView } from "@/lib/kiln/swarm-proxy";
-import { ForgeVersion } from "@/components/ForgeVersion";
+import { ForgeVersion, ForgeDoors } from "@/components/ForgeVersion";
 
 export const Route = createFileRoute("/agents")({ component: Agents });
 
@@ -111,6 +111,7 @@ function Agents() {
       )}
 
       <ForgeVersion />
+      <ForgeDoors />
     </div>
   );
 }

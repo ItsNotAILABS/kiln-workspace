@@ -8,7 +8,7 @@ import {
 } from "@/lib/kiln/swarm";
 import type { GitRepoView, SiteView, WorkspaceTreeNode, WorkspaceView } from "@/lib/kiln/swarm-proxy";
 import { useKiln } from "@/lib/kiln/store";
-import { ForgeVersion } from "@/components/ForgeVersion";
+import { ForgeVersion, ForgeDoors } from "@/components/ForgeVersion";
 
 export const Route = createFileRoute("/workspaces/")({ component: Workspaces });
 
@@ -406,6 +406,7 @@ function Workspaces() {
       )}
 
       <ForgeVersion />
+      <ForgeDoors />
     </div>
   );
 }
