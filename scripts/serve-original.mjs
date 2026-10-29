@@ -79,11 +79,50 @@ const server = http.createServer(async (req, res) => {
       204,
       {
         "access-control-allow-origin": "*",
-        "access-control-allow-methods": "GET,POST,OPTIONS",
-        "access-control-allow-headers": "content-type,accept",
+        "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+        "access-control-allow-headers": "content-type,accept,authorization",
       },
       "",
     );
+    return;
+  }
+
+  // Forge API proxy: /api/forge/X -> daemon http://127.0.0.1:18787/X
+  // The caller's Authorization header is forwarded verbatim; no token is
+  // injected server-side — the daemon enforces accounts-only itself (401
+  // without a credential). Status, content type and body pass through.
+  if (pathname.startsWith("/api/forge/")) {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = Buffer.concat(chunks);
+    const target = pathname.slice("/api/forge".length) + (u.search || "");
+    const headers = {};
+    if (req.headers.authorization) headers.authorization = req.headers.authorization;
+    if (req.headers["content-type"]) headers["content-type"] = req.headers["content-type"];
+    if (body.length) headers["content-length"] = body.length;
+    const upstream = http.request(
+      { host: "127.0.0.1", port: 18787, path: target, method: req.method, headers },
+      (up) => {
+        const parts = [];
+        up.on("data", (d) => parts.push(d));
+        up.on("end", () => {
+          const out = { "cache-control": "no-store" };
+          if (up.headers["content-type"]) out["content-type"] = up.headers["content-type"];
+          if (up.headers["content-disposition"]) out["content-disposition"] = up.headers["content-disposition"];
+          send(res, up.statusCode || 502, out, Buffer.concat(parts));
+        });
+      },
+    );
+    upstream.on("error", (e) => {
+      send(
+        res,
+        502,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: `forge daemon unreachable: ${e.message}` }),
+      );
+    });
+    if (body.length) upstream.write(body);
+    upstream.end();
     return;
   }
 

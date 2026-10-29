@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" class="dark antialiased">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" />
+    <title>KILN — Forge</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/assets-forge/forge.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">KILN</a>
+      <span class="brand-sub">Forge</span>
+      <form id="repo-form" class="repo-form">
+        <input id="owner-input" name="owner" aria-label="Owner" spellcheck="false" />
+        <span class="slash">/</span>
+        <input id="repo-input" name="repo" aria-label="Repository" spellcheck="false" />
+        <button type="submit" class="btn btn-small">Open</button>
+      </form>
+      <div class="auth-box">
+        <input id="token-input" type="password" placeholder="Bearer token (account / agent)" aria-label="Bearer token" autocomplete="off" />
+        <button id="token-save" type="button" class="btn btn-small">Use token</button>
+        <button id="token-clear" type="button" class="btn btn-small btn-ghost">Clear</button>
+        <span id="auth-state" class="auth-state">no token — read/write calls will 401</span>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <h1 id="repo-title" class="repo-title">Forge</h1>
+      <p class="hint">
+        Pull requests, releases and packages for this repository, served by the KILN daemon
+        forge API (<code>/api/forge/v1/…</code>). Your token is kept only in this tab's
+        session storage and sent as your own Authorization header — nothing is injected by the server.
+      </p>
+
+      <div id="notice" class="notice" hidden></div>
+
+      <nav class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="pulls" role="tab">Pull Requests</button>
+        <button type="button" class="tab" data-tab="releases" role="tab">Releases</button>
+        <button type="button" class="tab" data-tab="packages" role="tab">Packages</button>
+      </nav>
+
+      <!-- Pull Requests -->
+      <section id="tab-pulls" class="panel">
+        <div class="row">
+          <label>State
+            <select id="pr-state">
+              <option value="open">open</option>
+              <option value="closed">closed</option>
+              <option value="merged">merged</option>
+              <option value="all">all</option>
+            </select>
+          </label>
+          <button id="pr-refresh" type="button" class="btn btn-small">Refresh</button>
+        </div>
+        <div id="pr-list" class="list"><p class="muted">Loading pull requests…</p></div>
+
+        <div id="pr-detail" class="detail" hidden></div>
+
+        <form id="pr-create" class="card">
+          <h2>Open a pull request</h2>
+          <label>Title <input id="pr-title" required maxlength="300" /></label>
+          <label>Head branch <input id="pr-head" required placeholder="feature-branch" spellcheck="false" /></label>
+          <label>Base branch <input id="pr-base" required value="main" spellcheck="false" /></label>
+          <label>Body <textarea id="pr-body" rows="4" placeholder="What changes, and why?"></textarea></label>
+          <button type="submit" class="btn">Open pull request</button>
+          <span id="pr-create-msg" class="msg"></span>
+        </form>
+      </section>
+
+      <!-- Releases -->
+      <section id="tab-releases" class="panel" hidden>
+        <div class="row"><button id="rel-refresh" type="button" class="btn btn-small">Refresh</button></div>
+        <div id="rel-list" class="list"><p class="muted">Loading releases…</p></div>
+        <div id="rel-detail" class="detail" hidden></div>
+        <form id="rel-create" class="card">
+          <h2>Create a release</h2>
+          <label>Tag <input id="rel-tag" required placeholder="v1.2.0" spellcheck="false" /></label>
+          <label>Name <input id="rel-name" placeholder="Release name (optional)" /></label>
+          <label>Target <input id="rel-target" placeholder="Branch or SHA (optional)" spellcheck="false" /></label>
+          <label>Notes <textarea id="rel-notes" rows="5" placeholder="Release notes"></textarea></label>
+          <button type="submit" class="btn">Create release</button>
+          <span id="rel-create-msg" class="msg"></span>
+        </form>
+      </section>
+
+      <!-- Packages -->
+      <section id="tab-packages" class="panel" hidden>
+        <div class="row"><button id="pkg-refresh" type="button" class="btn btn-small">Refresh</button></div>
+        <div id="pkg-list" class="list"><p class="muted">Loading packages…</p></div>
+        <div id="pkg-detail" class="detail" hidden></div>
+      </section>
+    </main>
+
+    <script src="/assets-forge/forge.js"></script>
+  </body>
+</html>
