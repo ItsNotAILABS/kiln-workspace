@@ -8,7 +8,7 @@ import { handleKilnApi, runAgentTurnStream } from "./agent-turn.mjs";
 
 const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(ROOT, "public");
-const PORT = 8080;
+const PORT = Number(process.env.KILN_PORT || 8080);
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
