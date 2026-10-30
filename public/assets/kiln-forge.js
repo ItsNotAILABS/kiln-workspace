@@ -4,7 +4,8 @@
  * operator signing/vault secret. Privileged operator sessions must arrive via
  * an authenticated wallet/session boundary.
  */
-import { b as store } from "./store-sx46DNi5.js";
+import { b as store, t as chainBlocks, p as chainTxs } from "./store-sx46DNi5.js";
+import { T as sha256Hex } from "./fs-ri9Mkfbm.js";
 import { constitution, remember, sealMachine } from "./machine-seal.js";
 
 (function installKilnFetch() {
@@ -131,6 +132,147 @@ async function seatAgents(doc) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Forge activity mirror: daemon-side commits as L1 transactions.
+//
+// The app's chain is local (seeded + extraTxs/extraBlocks in the store), so
+// work that happens on the forge daemon never appears in it. At boot we pull
+// the recent daemon commits from /api/kiln/forge-activity (serve-original
+// reads them from the swarm daemon on this host) and settle one tx per real
+// commit, built exactly the way the store's own builder builds them: same
+// field order, same SHA-256 hash recipes for tx and block, one block per tx,
+// heights continuing from the current chain head. Each mirrored tx carries
+// forgeSha (the daemon commit sha) — that is the citation anyone can verify
+// against the daemon, and the dedupe key: extraTxs persist across reloads,
+// so a sha already in the ledger is never appended twice.
+// ---------------------------------------------------------------------------
+const L1_SETTLE_TO = "0x4c1e7a91b0c3d2e8f5a6478901234567890abcde"; // settle address the store's own actions (star/claim/import) write to
+
+async function forgeTxHash(tx) {
+  return `0x${(await sha256Hex(JSON.stringify(tx))).slice(0, 48)}`;
+}
+
+async function forgeBlockHash(block) {
+  const line = `${block.height}:${block.parent}:${block.timestamp}:${block.txs.map((t) => t.hash).join(",")}`;
+  return `0x${(await sha256Hex(line)).slice(0, 48)}`;
+}
+
+export async function mirrorForgeActivity() {
+  try {
+    const data = await fetch("/api/kiln/forge-activity", { cache: "no-store" })
+      .then((r) => r.json())
+      .catch(() => null);
+    const acts = Array.isArray(data?.activities) ? data.activities : [];
+    if (!acts.length) return 0;
+    const s = store.getState();
+    const seen = new Set((s.extraTxs || []).filter((t) => t && t.forgeSha).map((t) => t.forgeSha));
+    const fresh = acts
+      .filter((a) => a && a.sha && a.timestamp && !seen.has(a.sha))
+      .sort((x, y) => (Date.parse(x.timestamp) || 0) - (Date.parse(y.timestamp) || 0));
+    if (!fresh.length) return 0;
+    const head = chainBlocks(store.getState())[0];
+    let parent = head ? head.hash : "0x0";
+    let height = head ? head.height : 0;
+    const extraTxs = [...(s.extraTxs || [])];
+    const extraBlocks = [...(s.extraBlocks || [])];
+    for (const a of fresh) {
+      height += 1;
+      const repoId = `${a.owner}/${a.repo}`;
+      const base = {
+        type: "forge_commit",
+        from: KILN_ADDRESS,
+        to: L1_SETTLE_TO,
+        amount: 0,
+        memo: `${a.authorName} · ${repoId} — ${a.message}`,
+        repoId,
+        timestamp: a.timestamp,
+        block: height,
+        forgeSha: a.sha,
+      };
+      const tx = { ...base, hash: await forgeTxHash(base) };
+      const blockBase = { height, parent, timestamp: a.timestamp, txs: [tx] };
+      const block = { ...blockBase, hash: await forgeBlockHash(blockBase) };
+      extraTxs.push(tx);
+      extraBlocks.push(block);
+      parent = block.hash;
+    }
+    store.setState({ extraTxs, extraBlocks });
+    return fresh.length;
+  } catch (e) {
+    console.warn("kiln-forge activity mirror", e);
+    return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet transfers: one settled L1 tx between two wallets in this account —
+// the main wallet, an agent wallet, or a model wallet.
+//
+// The store's own tx builder (O) and settle (Y) are module-private, so this
+// replicates their recipes exactly, the same way the forge mirror above
+// replicates the hash recipes: tx base in O's field order, tx hash =
+// sha256(JSON.stringify(base)), one block per tx built like oe (height /
+// parent / timestamp + the block-hash line), heights continuing from the
+// current chain head. Field balances (main balance, agent wallet.balance)
+// move in the SAME setState as the ledger append, so a throw anywhere above
+// leaves every balance untouched; model wallets carry no balance field — the
+// settled tx alone moves their ledger-derived balance. The server copy is
+// posted best-effort, exactly like Y posts it (failures swallowed).
+// ---------------------------------------------------------------------------
+
+function ledgerBalanceOf(state, address) {
+  let balance = 0;
+  for (const t of chainTxs(state) || []) {
+    if (!t || (t.from !== address && t.to !== address)) continue;
+    balance += t.to === address ? +(t.amount ?? 0) : -(t.amount ?? 0);
+  }
+  return balance;
+}
+
+function resolveWallet(state, address) {
+  if (state.wallet && address === state.wallet.address) return { kind: "main", balance: state.balance ?? 0 };
+  const agent = (state.agents || []).find((a) => a.wallet && a.wallet.address === address);
+  if (agent) return { kind: "agent", agent, balance: agent.wallet.balance ?? 0 };
+  const conn = (state.modelConnections || []).find((m) => m.walletAddress === address);
+  if (conn) return { kind: "model", connection: conn, balance: ledgerBalanceOf(state, address) };
+  return null;
+}
+
+export async function transferFunds({ fromAddress, toAddress, amount, memo } = {}) {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter an amount more than 0 KLN");
+  if (!fromAddress || !toAddress || fromAddress === toAddress) throw new Error("Pick two different wallets");
+  const s = store.getState();
+  const from = resolveWallet(s, fromAddress);
+  const to = resolveWallet(s, toAddress);
+  if (!from || !to) throw new Error("Wallet not found in this account");
+  if (from.balance < amt) throw new Error("Not enough KLN in this wallet");
+  const head = chainBlocks(store.getState())[0];
+  const height = head ? head.height + 1 : 1;
+  const timestamp = new Date().toISOString();
+  const base = { type: "transfer", from: fromAddress, to: toAddress, amount: amt, memo: memo || "Transfer", repoId: undefined, timestamp, block: height, merkleRoot: undefined };
+  const tx = { ...base, hash: await forgeTxHash(base) };
+  const blockBase = { height, parent: head ? head.hash : "0x0", timestamp, txs: [tx] };
+  const block = { ...blockBase, hash: await forgeBlockHash(blockBase) };
+  const st = store.getState();
+  const patch = { extraTxs: [...(st.extraTxs || []), tx], extraBlocks: [...(st.extraBlocks || []), block] };
+  if (from.kind === "main" || to.kind === "main") patch.balance = (st.balance ?? 0) + (to.kind === "main" ? amt : 0) - (from.kind === "main" ? amt : 0);
+  if (from.kind === "agent" || to.kind === "agent") {
+    patch.agents = (st.agents || []).map((a) => {
+      if (!a.wallet) return a;
+      let bal = a.wallet.balance ?? 0;
+      if (from.kind === "agent" && a.id === from.agent.id) bal -= amt;
+      if (to.kind === "agent" && a.id === to.agent.id) bal += amt;
+      return bal === (a.wallet.balance ?? 0) ? a : { ...a, wallet: { ...a.wallet, balance: bal } };
+    });
+  }
+  store.setState(patch);
+  try {
+    await fetch(`/api/kiln/l1`, { method: `POST`, headers: { "content-type": "application/json" }, body: JSON.stringify({ block, tx }) });
+  } catch {}
+  return tx;
+}
+
 export async function bootKilnAccount() {
   if (booting) return booting;
   booting = (async () => {
@@ -143,6 +285,7 @@ export async function bootKilnAccount() {
         store.getState().upsertProfile({ handle: "kiln", displayName: "KILN", bio: doc.account.bio, location: "on-chain", address: s.wallet.address || KILN_ADDRESS, kind: "user", lab: "KILN", website: "/", highlight: "Origin of the forge" });
       }
       await seatAgents(doc);
+      await mirrorForgeActivity();
       return doc;
     } catch (e) {
       console.warn("kiln-forge boot", e);
@@ -154,6 +297,8 @@ export async function bootKilnAccount() {
 
 globalThis.__KILN_ENSURE_WALLET = ensureWallet;
 globalThis.__KILN_BOOT = bootKilnAccount;
+globalThis.__KILN_FORGE_ACTIVITY = mirrorForgeActivity;
+globalThis.__KILN_TRANSFER = transferFunds;
 globalThis.__KILN_ADDRESS = KILN_ADDRESS;
 
 let wrappedImport = false;
