@@ -153,6 +153,318 @@ async function forgeActivityBody() {
   return body;
 }
 
+// ---------------------------------------------------------------------------
+// Public account surface
+// (GET /api/kiln/public/accounts/:owner/repos[/:repo/commits])
+//
+// Reads the swarm daemon ANONYMOUSLY — deliberately no token, unlike the
+// forge-activity mirror above. The daemon's own visibility gate is the
+// enforcement: with no credential it only ever surfaces public repos, so
+// this surface cannot leak a private repo even if the code below has a bug.
+// As belt-and-braces, each repo's details must still say visibility:"public"
+// before the repo is included. Any failure answers 200 with an empty list:
+// this surface must never break the app that consumes it.
+// ---------------------------------------------------------------------------
+const PUBLIC_REPO_CAP = 40;
+const PUBLIC_COMMITS_LIMIT = 30;
+const PUBLIC_COMMITS_PAGE_LIMIT = 100;
+const PUBLIC_TREE_FILE_CAP = 200;
+const PUBLIC_TEXT_FILE_CAP = 40;
+const PUBLIC_TEXT_MAX_BYTES = 32768;
+const publicAccountCache = new Map();
+
+// The public surface computes whole accounts at once (several repos in
+// parallel, each walking its tree and fetching file contents), so daemon
+// calls can queue behind each other in the fetch connection pool — and an
+// abort timeout ticks while a request is still queued. This reader gets a
+// longer timeout than the forge-activity reader plus one retry, so queue
+// waits never masquerade as daemon failures.
+const PUBLIC_FETCH_TIMEOUT_MS = 8000;
+
+async function daemonAnonJson(pathname) {
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(FORGE_DAEMON + pathname, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(PUBLIC_FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`daemon ${res.status} for ${pathname.split("?")[0]}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  throw lastErr;
+}
+
+const PUBLIC_LANG_BY_EXT = {
+  md: "Markdown", markdown: "Markdown", ts: "TypeScript", tsx: "TypeScript",
+  js: "JavaScript", jsx: "JavaScript", mjs: "JavaScript", cjs: "JavaScript",
+  json: "JSON", rs: "Rust", py: "Python", sol: "Solidity", toml: "toml",
+  css: "CSS", html: "HTML", yml: "YAML", yaml: "YAML", sh: "Shell", go: "Go",
+  txt: "Text",
+};
+const PUBLIC_TEXT_EXTS = new Set([
+  ...Object.keys(PUBLIC_LANG_BY_EXT), "gitignore", "lock", "cfg", "ini", "env.example",
+]);
+
+function publicExtOf(p) {
+  const base = String(p).split("/").pop() || "";
+  if (base === ".gitignore") return "gitignore";
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+}
+
+function publicLangOf(p) {
+  return PUBLIC_LANG_BY_EXT[publicExtOf(p)] || "";
+}
+
+async function walkPublicTree(owner, repo, branch) {
+  // Level-by-level, directories in parallel. A failed tree read aborts the
+  // walk (and with it the whole repo record): a partial tree presented as
+  // complete would be a false surface, so this is all-or-nothing per repo.
+  const files = [];
+  let level = [""];
+  while (level.length && files.length < PUBLIC_TREE_FILE_CAP) {
+    const datas = await Promise.all(
+      level.map((dir) =>
+        daemonAnonJson(
+          `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree?ref=${encodeURIComponent(branch)}${dir ? `&path=${encodeURIComponent(dir)}` : ""}`,
+        ),
+      ),
+    );
+    const next = [];
+    for (const data of datas) {
+      for (const e of Array.isArray(data?.entries) ? data.entries : []) {
+        if (!e || !e.path) continue;
+        if (e.type === "tree") {
+          if (next.length < 32) next.push(e.path);
+          continue;
+        }
+        if (e.type !== "blob") continue;
+        files.push({
+          path: e.path,
+          size: typeof e.size === "number" ? e.size : 0,
+          sha: e.sha || "",
+          language: publicLangOf(e.path),
+        });
+        if (files.length >= PUBLIC_TREE_FILE_CAP) break;
+      }
+    }
+    level = next;
+  }
+  return files;
+}
+
+async function publicFileContent(owner, repo, filePath) {
+  const data = await daemonAnonJson(
+    `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents?path=${encodeURIComponent(filePath)}`,
+  );
+  if (!data || data.encoding !== "base64" || typeof data.content !== "string") return null;
+  const buf = Buffer.from(data.content, "base64");
+  if (buf.length > PUBLIC_TEXT_MAX_BYTES || buf.includes(0)) return null;
+  return buf.toString("utf8");
+}
+
+function mapDaemonCommit(c) {
+  if (!c || !c.sha) return null;
+  return {
+    sha: c.sha,
+    subject: typeof c.subject === "string" ? c.subject : "",
+    author: c.author?.name || "unknown",
+    email: c.author?.email || "",
+    date: c.date || null,
+  };
+}
+
+async function computePublicRepo(owner, repo) {
+  const details = await daemonAnonJson(
+    `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`,
+  );
+  // Belt-and-braces on top of the daemon's anonymous gate: a repo is only
+  // ever surfaced when its own details call it public.
+  if (!details || details.visibility !== "public") return null;
+  const branch = details.defaultBranch || "main";
+  let commits = [];
+  try {
+    const data = await daemonAnonJson(
+      `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?limit=${PUBLIC_COMMITS_LIMIT}`,
+    );
+    commits = (Array.isArray(data?.commits) ? data.commits : []).map(mapDaemonCommit).filter(Boolean);
+  } catch {
+    commits = [];
+  }
+  const files = await walkPublicTree(owner, repo, branch);
+  let readme = null;
+  const isRootReadme = (p) => !p.includes("/") && /^readme(\.md|\.markdown|\.txt)?$/i.test(p);
+  const candidates = files
+    .filter((f) => (PUBLIC_TEXT_EXTS.has(publicExtOf(f.path)) || isRootReadme(f.path)) && f.size <= PUBLIC_TEXT_MAX_BYTES)
+    .sort((a, b) => (isRootReadme(b.path) ? 1 : 0) - (isRootReadme(a.path) ? 1 : 0))
+    .slice(0, PUBLIC_TEXT_FILE_CAP + 1);
+  let ci = 0;
+  const fetchWorker = async () => {
+    while (ci < candidates.length) {
+      const f = candidates[ci++];
+      try {
+        const content = await publicFileContent(owner, repo, f.path);
+        if (content != null) {
+          f.content = content;
+          if (isRootReadme(f.path)) readme = content;
+        }
+      } catch {
+        /* one unreadable file must not sink the repo */
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(6, candidates.length)) }, fetchWorker));
+  const languages = {};
+  for (const f of files) {
+    if (!f.language) continue;
+    languages[f.language] = (languages[f.language] || 0) + 1;
+  }
+  const language = Object.entries(languages).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  const tip =
+    commits[0] ||
+    (details.lastCommit
+      ? {
+          sha: details.lastCommit.sha,
+          subject: details.lastCommit.subject || "",
+          author: details.lastCommit.author || "unknown",
+          email: "",
+          date: details.lastCommit.date || null,
+        }
+      : null);
+  return {
+    id: `${owner}/${repo}`,
+    owner,
+    name: repo,
+    description: details.description || "",
+    topics: Array.isArray(details.topics) ? details.topics : [],
+    visibility: "public",
+    defaultBranch: branch,
+    createdAt: details.createdAt || null,
+    updatedAt: tip?.date || details.createdAt || null,
+    commitCount: typeof details.commitCount === "number" ? details.commitCount : commits.length,
+    fileCount: typeof details.fileCount === "number" ? details.fileCount : files.length,
+    tip: tip
+      ? { sha: tip.sha, shortSha: String(tip.sha).slice(0, 7), subject: tip.subject, author: tip.author, date: tip.date }
+      : null,
+    commits,
+    files,
+    readme,
+    language,
+    languages,
+  };
+}
+
+async function computePublicAccount(owner) {
+  const listed = await daemonAnonJson("/git");
+  const repoList = Array.isArray(listed) ? listed : Array.isArray(listed?.repos) ? listed.repos : [];
+  const names = repoList
+    .filter((r) => r && r.owner === owner && r.repo)
+    .map((r) => r.repo)
+    .slice(0, PUBLIC_REPO_CAP);
+  const out = [];
+  let idx = 0;
+  const worker = async () => {
+    while (idx < names.length) {
+      const name = names[idx++];
+      try {
+        const rec = await computePublicRepo(owner, name);
+        if (rec) out.push(rec);
+      } catch {
+        /* one bad repo must not sink the account */
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(4, names.length)) }, worker));
+  out.sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+  return out;
+}
+
+async function publicAccountBody(owner) {
+  const now = Date.now();
+  const hit = publicAccountCache.get(owner);
+  if (hit && now - hit.at < 30000) return hit.body;
+  let repos = [];
+  try {
+    repos = await computePublicAccount(owner);
+  } catch {
+    repos = [];
+  }
+  const body = JSON.stringify({ ok: true, owner, repos });
+  publicAccountCache.set(owner, { at: now, body });
+  return body;
+}
+
+async function publicCommitsBody(owner, repo) {
+  const empty = JSON.stringify({ ok: true, owner, repo, commits: [] });
+  try {
+    const listed = await daemonAnonJson("/git");
+    const repoList = Array.isArray(listed) ? listed : Array.isArray(listed?.repos) ? listed.repos : [];
+    // Not in the anonymous listing → not public → answer exactly as if the
+    // repo did not exist.
+    if (!repoList.some((r) => r && r.owner === owner && r.repo === repo)) return empty;
+    const details = await daemonAnonJson(
+      `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`,
+    );
+    if (!details || details.visibility !== "public") return empty;
+    const data = await daemonAnonJson(
+      `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?limit=${PUBLIC_COMMITS_PAGE_LIMIT}`,
+    );
+    const commits = (Array.isArray(data?.commits) ? data.commits : []).map(mapDaemonCommit).filter(Boolean);
+    return JSON.stringify({ ok: true, owner, repo, commits });
+  } catch {
+    return empty;
+  }
+}
+
+// Public search (GET /api/kiln/public/search?q=): matches account handles
+// and repo names across the ANONYMOUS daemon listing only — the same
+// public-only universe as the account surface. Repo records are the full
+// account-surface records (reused through the per-account cache), so a
+// search hit carries everything the app needs to render it.
+async function publicSearchBody(q) {
+  const empty = JSON.stringify({ ok: true, q, accounts: [], repos: [] });
+  if (!q || q.length < 2) return empty;
+  try {
+    const listed = await daemonAnonJson("/git");
+    const repoList = Array.isArray(listed) ? listed : Array.isArray(listed?.repos) ? listed.repos : [];
+    const owners = [];
+    const seenOwners = new Set();
+    const addOwner = (o) => {
+      if (o && !seenOwners.has(o) && owners.length < 4) {
+        seenOwners.add(o);
+        owners.push(o);
+      }
+    };
+    for (const r of repoList) if (r?.owner && r.owner.includes(q)) addOwner(r.owner);
+    for (const r of repoList)
+      if (r?.owner && r?.repo && (r.repo.includes(q) || `${r.owner}/${r.repo}`.includes(q))) addOwner(r.owner);
+    if (!owners.length) return empty;
+    const accounts = [];
+    const repos = [];
+    for (const owner of owners) {
+      let recs = [];
+      try {
+        recs = JSON.parse(await publicAccountBody(owner)).repos || [];
+      } catch {
+        recs = [];
+      }
+      if (!recs.length) continue;
+      if (owner.includes(q)) accounts.push({ owner, repoCount: recs.length });
+      for (const rec of recs) {
+        if (repos.length < 8 && (rec.name.includes(q) || rec.id.includes(q))) repos.push(rec);
+      }
+    }
+    return JSON.stringify({ ok: true, q, accounts, repos });
+  } catch {
+    return empty;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const u = url.parse(req.url, true);
   let pathname = decodeURIComponent(u.pathname || "/");
@@ -238,6 +550,53 @@ const server = http.createServer(async (req, res) => {
         "access-control-allow-origin": "*",
       },
       await forgeActivityBody(),
+    );
+    return;
+  }
+
+  // Public account surface — answered here for the same reason. Reads the
+  // daemon anonymously (see the section above); always 200, and an invalid
+  // or unknown handle answers exactly like an account with no public repos.
+  const publicReposMatch = pathname.match(/^\/api\/kiln\/public\/accounts\/([^/]+)\/repos$/);
+  const publicCommitsMatch = pathname.match(/^\/api\/kiln\/public\/accounts\/([^/]+)\/repos\/([^/]+)\/commits$/);
+  if (req.method === "GET" && (publicReposMatch || publicCommitsMatch)) {
+    const owner = String((publicReposMatch || publicCommitsMatch)[1]).toLowerCase();
+    const ownerOk = /^[a-z0-9][a-z0-9-]{0,38}$/.test(owner);
+    let body;
+    if (publicCommitsMatch) {
+      const repo = String(publicCommitsMatch[2]);
+      body =
+        ownerOk && /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(repo)
+          ? await publicCommitsBody(owner, repo)
+          : JSON.stringify({ ok: true, owner, repo, commits: [] });
+    } else {
+      body = ownerOk ? await publicAccountBody(owner) : JSON.stringify({ ok: true, owner, repos: [] });
+    }
+    send(
+      res,
+      200,
+      {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+      },
+      body,
+    );
+    return;
+  }
+
+  // Public search — same anonymous-only universe as the account surface.
+  if (pathname === "/api/kiln/public/search" && req.method === "GET") {
+    const q = String(u.query?.q || "").trim().toLowerCase();
+    send(
+      res,
+      200,
+      {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*",
+      },
+      await publicSearchBody(q),
     );
     return;
   }
