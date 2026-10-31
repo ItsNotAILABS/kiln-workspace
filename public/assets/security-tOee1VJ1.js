@@ -13,7 +13,7 @@ function component(){
           ["Merkle root", repo.merkleRoot||"pending"],
           ["Viewer grant", repo.viewerGrant?"yes":"no"],
           ["Chain address", repo.chainAddress||"—"],
-          ["Folder cap", "50 GB"]
+          ["Folder cap", "100 GB"]
         ].map(([k,v])=>j.jsxs("li",{className:"flex justify-between gap-4 px-4 py-3 text-sm",children:[
           j.jsx("span",{className:"text-muted",children:k}),
           j.jsx("span",{className:"break-all font-mono text-xs",children:String(v)})

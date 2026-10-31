@@ -158,7 +158,7 @@ function component() {
                           }),
                           j.jsx("p", {
                             className: "mt-2 font-mono text-[11px] text-subtle",
-                            children: `${nFiles} files · ${terms.toLocaleString()} terms · 50 GB cap`,
+                            children: `${nFiles} files · ${terms.toLocaleString()} terms · 100 GB cap`,
                           }),
                           hits
                             ? j.jsx("ul", {

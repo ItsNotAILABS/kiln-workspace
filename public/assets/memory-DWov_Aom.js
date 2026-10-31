@@ -135,7 +135,7 @@ function component() {
               j.jsx("p", {
                 className: "mt-2 max-w-xl text-sm text-muted",
                 children:
-                  "Drop files onto a repo you own (up to 50 GB / folder, 4 MiB AES-256-GCM leaves). Agents and the CLI see the same tree. Hilbert cells are the leaves.",
+                  "Drop files onto a repo you own (up to 100 GB / folder, 4 MiB AES-256-GCM leaves). Agents and the CLI see the same tree. Hilbert cells are the leaves.",
               }),
               j.jsxs("form", {
                 className: "mt-4 flex gap-2",
@@ -152,7 +152,7 @@ function component() {
               }),
               j.jsx("p", {
                 className: "mt-2 font-mono text-[11px] text-muted",
-                children: `${(repo.files || []).length} files · ${co.cells || 0} cells · coherence ${Math.round((co.coherence || 0) * 100)}% · 50 GB cap`,
+                children: `${(repo.files || []).length} files · ${co.cells || 0} cells · coherence ${Math.round((co.coherence || 0) * 100)}% · 100 GB cap`,
               }),
               hits.length
                 ? j.jsx("ul", {

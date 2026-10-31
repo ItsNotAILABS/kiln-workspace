@@ -171,7 +171,7 @@ w(
       j.jsxs("div",{className:"space-y-4",children:[
         j.jsxs("section",{className:"rounded-xl border border-border bg-surface p-3",children:[
           j.jsx("p",{className:"text-[11px] uppercase tracking-[0.16em] text-muted",children:"Folder memory"}),
-          j.jsx("p",{className:"mt-1 font-mono text-[11px] text-subtle",children:files.length+" files · "+terms+" terms · 50 GB cap"}),
+          j.jsx("p",{className:"mt-1 font-mono text-[11px] text-subtle",children:files.length+" files · "+terms+" terms · 100 GB cap"}),
           j.jsx("input",{className:"input mt-2 h-9",placeholder:"Search this project"})
         ]}),
         j.jsxs("section",{className:"rounded-xl border border-border bg-surface p-3",children:[
@@ -256,7 +256,7 @@ w(
   if(!repo) return j.jsx("p",{className:"py-16 text-center text-muted",children:"No folder memory."});
   return j.jsxs(Shell,{children:[
     j.jsx("h2",{className:"font-display text-3xl tracking-tight",children:"Folder memory"}),
-    j.jsx("p",{className:"mt-2 max-w-xl text-sm text-muted",children:"File bytes live in repository memory, not a tiny local cache. Drop files onto a repo you own (up to 50 GB / folder, 4 MiB AES-256-GCM leaves). Agents and the CLI see the same tree."}),
+    j.jsx("p",{className:"mt-2 max-w-xl text-sm text-muted",children:"File bytes live in repository memory, not a tiny local cache. Drop files onto a repo you own (up to 100 GB / folder, 4 MiB AES-256-GCM leaves). Agents and the CLI see the same tree."}),
     j.jsx("div",{className:"mt-6",children:j.jsx(Tree,{repo})})
   ]});
 }
@@ -325,7 +325,7 @@ w(
   if(!repo) return j.jsx("p",{className:"py-16 text-center text-muted",children:"Missing tree."});
   return j.jsxs(Shell,{children:[
     j.jsx("h2",{className:"font-display text-2xl tracking-tight",children:"Settings"}),
-    j.jsx("p",{className:"mt-2 text-sm text-muted",children:"Default branch "+(repo.defaultBranch||"main")+" · cipher "+(repo.encrypted?"AES-256-GCM":"none")+" · 50 GB folder cap."})
+    j.jsx("p",{className:"mt-2 text-sm text-muted",children:"Default branch "+(repo.defaultBranch||"main")+" · cipher "+(repo.encrypted?"AES-256-GCM":"none")+" · 100 GB folder cap."})
   ]});
 }
 export{component};`,

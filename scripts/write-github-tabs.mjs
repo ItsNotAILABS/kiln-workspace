@@ -365,7 +365,7 @@ page(
           ["Watchers", repo.watchers||1],
           ["Forks", repo.forks||0],
           ["TVL", (repo.tvlKln||0)+" KLN"],
-          ["Quota", "50 GB"]
+          ["Quota", "100 GB"]
         ].map(([k,v])=>j.jsxs("article",{className:"rounded-xl border border-border bg-surface p-4",children:[
           j.jsx("p",{className:"text-[11px] uppercase tracking-[0.16em] text-muted",children:k}),
           j.jsx("p",{className:"mt-1 font-display text-2xl",children:String(v)})
@@ -396,7 +396,7 @@ page(
           ["Merkle root", repo.merkleRoot||"pending"],
           ["Viewer grant", repo.viewerGrant?"yes":"no"],
           ["Chain address", repo.chainAddress||"—"],
-          ["Folder cap", "50 GB"]
+          ["Folder cap", "100 GB"]
         ].map(([k,v])=>j.jsxs("li",{className:"flex justify-between gap-4 px-4 py-3 text-sm",children:[
           j.jsx("span",{className:"text-muted",children:k}),
           j.jsx("span",{className:"break-all font-mono text-xs",children:String(v)})

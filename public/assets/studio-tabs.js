@@ -194,7 +194,7 @@ function kernelFilesFor(repoId) {
               "Handoff, do not impersonate.",
               "Seat yourself after a write.",
               "Never exfiltrate vault keys.",
-              "Folder quota is 50 GiB. Cipher verifies.",
+              "Folder quota is 100 GiB. Cipher verifies.",
               "The capsule boots index.html. Deployer ships it.",
               "Speak git: clone, commit, push, pull, branch.",
             ],
@@ -826,7 +826,7 @@ function KernelPane({ repoId, agents, focus, files, onPick }) {
   const edges = (crew?.edges?.length ? crew.edges : CREW_GRAPH) || [];
   const constitution =
     crew?.constitution ||
-    `# Constitution · ${repoId}\n\nThis repository is a sealed machine. The crew are processes on it.\n\n1. One computer per repository.\n2. A write is git commit. Use kiln_write_file.\n3. Handoff, do not impersonate.\n4. Seat yourself after a write.\n5. Never exfiltrate vault keys.\n6. Folder quota is 50 GiB. Cipher verifies.\n7. The capsule boots index.html. Deployer ships it.\n8. Speak git: clone, commit, push, pull, branch.\n`;
+    `# Constitution · ${repoId}\n\nThis repository is a sealed machine. The crew are processes on it.\n\n1. One computer per repository.\n2. A write is git commit. Use kiln_write_file.\n3. Handoff, do not impersonate.\n4. Seat yourself after a write.\n5. Never exfiltrate vault keys.\n6. Folder quota is 100 GiB. Cipher verifies.\n7. The capsule boots index.html. Deployer ships it.\n8. Speak git: clone, commit, push, pull, branch.\n`;
   const mail = agents.flatMap((a) => (a.mailbox || []).map((m, i) => ({ ...m, agent: a.name, role: a.role, key: (m.id || a.id) + ":" + i })));
   const handoffs = (st.handoffs || []).filter((h) => h.repoId === repoId).slice(0, 24);
   const open = files.find((f) => f.path === openPath) || files[0];

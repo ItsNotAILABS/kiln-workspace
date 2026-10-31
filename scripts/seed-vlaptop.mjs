@@ -71,7 +71,7 @@ const repo = {
   readme,
   website: "https://github.com/ItsNotAILABS/vlaptop",
   merkleRoot: "0x" + sha(readme, "root").slice(1),
-  quotaBytes: 53687091200,
+  quotaBytes: 107374182400,
   modelId: "grok-4.6",
   githubUrl: "https://github.com/ItsNotAILABS/vlaptop",
   githubSha: "HEAD",
