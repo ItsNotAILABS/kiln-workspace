@@ -11,6 +11,16 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" />
     <script>document.documentElement.classList.add("js");</script>
     <style>html.js [data-kiln-ssr] { display: none !important; }</style>
+    <style>
+      /* Mobile shell: below 640px the profile-centric bottom bar (3.5rem +
+         safe-area) is fixed over the page. Full-bleed panes sized
+         calc(100dvh - 3.5rem) — the Studio root — would run exactly that
+         far under it, so on those widths the pane height gives the bar's
+         height back. Desktop and tablet keep the original pane height. */
+      @media (max-width: 639.98px) {
+        .h-\[calc\(100dvh-3\.5rem\)\] { height: calc(100dvh - 3.5rem - 3.5rem - env(safe-area-inset-bottom)) !important; }
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
