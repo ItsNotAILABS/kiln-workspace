@@ -94,3 +94,44 @@ Live Worker: v36 at start. Host load extreme (25-41) — serialize heavy steps.
   answer in <1s. CDP profiler dispatched to name the spinning function —
   directly relevant to Item 4's diagnosis (a boot-time main-thread block is
   also a candidate for keystrokes dropped on a slow phone).
+
+## RELAND — the /studio crash, diagnosed and fixed (2026-11-01 ~01:2x CDT)
+- First landing (FF merge to improve/ws-system-ui + browser gate) caught a
+  REAL regression and backed out: /studio hit the app error boundary with
+  React error #130 ("got: object") on the merged tree; pristine afd7a48
+  rendered Studio fully in the same environment. Production untouched (v36).
+- ROOT CAUSE (bisect-proven): 8cd2e30 inserted the doors/repos strips
+  inside component `j` of studio-fjyqp5G-.js. At module scope `r` is the
+  router Link (import from link-BhiAFiqq.js), but inside `j` the minified
+  local `r` is `t.agents` — an array. The strips' `(0,k.jsx)(r, ...)`
+  therefore created elements whose type is the agents array → #130 on the
+  strips' unconditional first render. The load sim could not catch this
+  class: it evaluates modules, never renders. All other bindings in the
+  insertion are sound inside `j` (`o` = AppShell plus icon, a forwardRef —
+  probe-verified; the doors' other entries are plain anchors).
+- Bisection record (bisect_serve + headless Chromium, stubbed APIs):
+  pristine renders (25,654 chars); branch tip with ONLY the studio chunk
+  reverted renders; doors-only variant crashes; doors-minus-Link renders
+  fully (25,704, doors present); doors-minus-icon still crashes.
+- FIX (3f47b40): the two strips moved verbatim into a new module-scope
+  component `KilnStrips({repos})` in the same chunk, where `r`/`o` resolve
+  to the imports; `j` renders `(0,k.jsx)(KilnStrips,{repos:s})` at the
+  exact position the strips occupied. Behavior identical — doors and repo
+  chips remain client-side router Links (rendered anchors verified:
+  /gists, /new?tab=create, /new?tab=import, /kiln-labs/protocol, …).
+- RENDER PROOF (worktree, bisect env): /studio desktop 25,934 chars +
+  doors + one-shot, 0 pageerrors; mobile /studio renders, 0 pageerrors;
+  mobile / renders with all five bar tabs; /chain + block receipt +
+  tx receipt all render, 0 pageerrors.
+- RELAND: main tree fast-forwarded afd7a48 → branch tip; foreign WIP
+  preserved (ops-cloudflare/README.md M, kiln-account.json M, data/ —
+  the index.html WIP one-liner was superseded by the branch, discarded
+  per instructions after verifying it was only the kiln-chat.css line).
+  Load sim on the merged tree: studio/AppShell/kiln-public/kiln-receipt/
+  chain/new/_id all RAN CLEAN, exports intact. Browser gate on a copy of
+  the merged tree: /, /chain, /studio (desktop+mobile), block receipt,
+  tx receipt — ALL 0 pageerrors.
+- Typing proof (Item 4): attempted again at 375px against /explore — the
+  headless renderer saturated for minutes (the documented boot flood;
+  its renderer had to be killed). STILL OWED, environmental — does not
+  block the reland; the uncontrolled-input fix itself is in 319b21c.
