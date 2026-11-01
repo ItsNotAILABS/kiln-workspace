@@ -150,19 +150,25 @@ function ssrApiUrl(route, site) {
   return `${site}/api/kiln/public/accounts/${encodeURIComponent(route.owner)}/repos`;
 }
 
-// Undefined means "no answer" (timeout, error, non-200): the caller then
-// serves the plain shell. A 200 with empty collections is a real answer
-// and renders an honest snapshot of it.
+// { ok: true, data } is a real answer — a 200 with empty collections
+// renders an honest snapshot of it. { ok: false } means "no answer"
+// (timeout, error, non-200): the caller then serves the plain shell.
+// The timeout runs on an explicit AbortController rather than
+// AbortSignal.timeout so the budget holds in every runtime.
 async function ssrFetchJson(origin, path) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), SSR_TIMEOUT_MS);
   try {
     const res = await fetch(new URL(path, origin), {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(SSR_TIMEOUT_MS),
+      signal: ctl.signal,
     });
-    if (!res.ok) return undefined;
-    return await res.json();
+    if (!res.ok) return { ok: false, reason: `http-${res.status}` };
+    return { ok: true, data: await res.json() };
   } catch {
-    return undefined;
+    return { ok: false, reason: ctl.signal.aborted ? "timeout" : "error" };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -357,28 +363,36 @@ async function ssrServe(request, url, route, shell, env) {
   const site = url.origin;
   let block = "";
   let jsonLd = null;
+  // Reported on the x-kiln-ssr header so an agent reader can tell a
+  // rendered snapshot from a fail-soft shell without guessing.
+  let outcome = "unavailable";
   try {
     const origin = env.ORIGINAL_API_URL || FALLBACK_ORIGIN;
     let built;
     if (route.kind === "explore" && !route.q) {
       built = ssrExplore(route, null, site);
+      outcome = "descriptive";
     } else if (route.kind === "explore") {
-      built = ssrExplore(
-        route,
-        await ssrFetchJson(origin, `/api/kiln/public/search?q=${encodeURIComponent(route.q)}`),
-        site,
+      const r = await ssrFetchJson(
+        origin,
+        `/api/kiln/public/search?q=${encodeURIComponent(route.q)}`,
       );
+      built = ssrExplore(route, r.ok ? r.data : undefined, site);
+      outcome = r.ok ? "data" : "unavailable";
     } else {
-      const data = await ssrFetchJson(
+      const r = await ssrFetchJson(
         origin,
         `/api/kiln/public/accounts/${encodeURIComponent(route.owner)}/repos`,
       );
+      const data = r.ok ? r.data : undefined;
       built = route.kind === "profile" ? ssrProfile(route, data, site) : ssrRepo(route, data, site);
+      outcome = r.ok ? "data" : "unavailable";
     }
     block = built.block;
     jsonLd = built.jsonLd;
   } catch {
     /* fail-soft: plain shell + machine pointer below */
+    outcome = "unavailable";
   }
 
   let html = await shell.text();
@@ -392,6 +406,7 @@ async function ssrServe(request, url, route, shell, env) {
   headers.delete("content-length");
   headers.delete("content-encoding");
   headers.set("content-type", "text/html; charset=utf-8");
+  headers.set("x-kiln-ssr", outcome);
   if (block) headers.set("cache-control", "public, max-age=60");
   const out = new Response(html, { status: shell.status, headers });
   if (cache && block) {
