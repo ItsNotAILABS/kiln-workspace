@@ -7,6 +7,7 @@
 import { b as store, t as chainBlocks, p as chainTxs } from "./store-sx46DNi5.js";
 import { T as sha256Hex } from "./fs-ri9Mkfbm.js";
 import { constitution, remember, sealMachine } from "./machine-seal.js";
+import { repairRecord } from "./kiln-public.js";
 
 (function installKilnFetch() {
   const w = globalThis;
@@ -59,6 +60,16 @@ export const KILN_HANDLE = "kiln";
 export const KILN_ADDRESS = "0xbb316d9499a18f9cd5e3691e25e04072308e3700";
 
 let booting = null;
+// Signature of the last capsule this page load merged. bootKilnAccount
+// runs on hydration (twice), on a 400ms timer, and on EVERY return to
+// the tab — and each run used to re-merge the full capsule into the
+// store, which makes the persisted store rewrite its whole blob
+// (userRepos with file contents, ~1.7MB and growing with the forge)
+// and re-render every list, on top of re-downloading the capsule.
+// When the capsule has not changed, the merge and the seating are
+// already done: skip both. The activity mirror still runs — new
+// daemon commits are not part of the capsule signature.
+let lastCapsuleSig = "";
 
 function dedupe(repos) {
   const seen = new Set();
@@ -74,7 +85,12 @@ function dedupe(repos) {
 
 function mergeRepos(doc) {
   const s = store.getState();
-  const incoming = (doc.repos || []).map((r) => ({ ...r, viewerGrant: true, encrypted: !!r.encrypted, owner: "kiln", name: String(r.id).split("/")[1] || r.name }));
+  // Records are shape-normalized as they cross this door (files always
+  // an array, dates parseable, counts numeric): the store's persist
+  // partialize maps files inside setState, so a malformed record merged
+  // here would make every later setState throw — the repair subscription
+  // in kiln-public.js is the second line, never the only one.
+  const incoming = (doc.repos || []).map((r) => ({ ...repairRecord(r), viewerGrant: true, encrypted: !!r.encrypted, owner: "kiln", name: String(r.id).split("/")[1] || r.name }));
   const byId = new Map();
   for (const r of s.userRepos || []) byId.set(r.id, r);
   for (const fresh of incoming) {
@@ -279,7 +295,13 @@ export async function bootKilnAccount() {
     try {
       const doc = await fetch("/kiln-account.json", { cache: "no-store" }).then((r) => r.json());
       if (!doc?.account) return null;
+      const sig = `${doc.publishedAt || ""}|${doc.merkle || ""}|${(doc.repos || []).length}`;
+      if (sig === lastCapsuleSig && Array.isArray(globalThis.__KILN_FORGE_REPOS)) {
+        await mirrorForgeActivity();
+        return doc;
+      }
       mergeRepos(doc);
+      lastCapsuleSig = sig;
       const s = store.getState();
       if (s.wallet?.handle === "kiln") {
         store.getState().upsertProfile({ handle: "kiln", displayName: "KILN", bio: doc.account.bio, location: "on-chain", address: s.wallet.address || KILN_ADDRESS, kind: "user", lab: "KILN", website: "/", highlight: "Origin of the forge" });

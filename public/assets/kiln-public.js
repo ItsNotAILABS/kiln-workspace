@@ -140,6 +140,55 @@ export function repairImportStub(rec) {
   return out;
 }
 
+// --- shape hardening -----------------------------------------------------------
+//
+// The stub repair above covers the fields the v35 crash needed. The views
+// dereference more than that, unconditionally: the Explore list formats
+// updatedAt with formatDistanceToNow (throws RangeError on an unparseable
+// date), lowercases description and language and .some()s topics when a
+// ?q= filter is active, counts files, and prints license raw. A record
+// that arrives — or is REHYDRATED from a persisted blob written by an
+// older build — with any of those fields missing or mistyped crashes the
+// same renders the stub repair saved, through a different door. So every
+// record the repair pass touches is also normalized to the render-safe
+// shape: invalid fields are replaced with the honest neutral value,
+// present valid values are never overwritten, and a record that is
+// already safe keeps its identity, so passes settle instead of churning.
+
+export function normalizeRepoShape(rec) {
+  if (!rec || !rec.id) return rec;
+  let out = rec;
+  const fix = (key, value) => {
+    if (out === rec) out = { ...rec };
+    out[key] = value;
+  };
+  if (typeof rec.tvlKln !== "number" || !Number.isFinite(rec.tvlKln)) fix("tvlKln", 0);
+  if (typeof rec.listedKln !== "number" || !Number.isFinite(rec.listedKln)) fix("listedKln", 0);
+  const updatedOk = typeof rec.updatedAt === "string" && !Number.isNaN(Date.parse(rec.updatedAt));
+  if (!updatedOk) {
+    const createdOk = typeof rec.createdAt === "string" && !Number.isNaN(Date.parse(rec.createdAt));
+    fix("updatedAt", createdOk ? rec.createdAt : new Date().toISOString());
+  }
+  if (typeof rec.description !== "string") fix("description", "");
+  if (!Array.isArray(rec.topics) || rec.topics.some((t) => typeof t !== "string")) {
+    fix("topics", Array.isArray(rec.topics) ? rec.topics.filter((t) => typeof t === "string") : []);
+  }
+  if (typeof rec.language !== "string") fix("language", "");
+  if (!Array.isArray(rec.files) || rec.files.some((f) => !f || typeof f.path !== "string")) {
+    fix("files", Array.isArray(rec.files) ? rec.files.filter((f) => f && typeof f.path === "string") : []);
+  }
+  if (rec.license !== null && typeof rec.license !== "string") fix("license", null);
+  if (typeof rec.name !== "string" || !rec.name) fix("name", String(rec.id).split("/")[1] || rec.name || "");
+  if (typeof rec.visibility !== "string") fix("visibility", "public");
+  return out;
+}
+
+// Stub repair first (owner / numeric fills from the daemon's truth), then
+// the shape normalization every render relies on.
+export function repairRecord(rec) {
+  return normalizeRepoShape(repairImportStub(rec));
+}
+
 const chainFillPending = new Set();
 
 async function fillStubChainAddresses(recs) {
@@ -177,14 +226,14 @@ export function repairImportStubs() {
   try {
     const st = store.getState();
     const repos = st.userRepos || [];
-    const next = repos.map(repairImportStub);
+    const next = repos.map(repairRecord);
     if (next.some((r, i) => r !== repos[i])) {
       store.setState({ userRepos: next });
       changed = true;
     }
     if (Array.isArray(globalThis.__KILN_FORGE_REPOS)) {
       const forge = globalThis.__KILN_FORGE_REPOS;
-      const nextForge = forge.map(repairImportStub);
+      const nextForge = forge.map(repairRecord);
       if (nextForge.some((r, i) => r !== forge[i])) {
         globalThis.__KILN_FORGE_REPOS = nextForge;
         changed = true;
@@ -201,7 +250,38 @@ export function repairImportStubs() {
   return changed;
 }
 
+// Scrub the persisted store blob before the shell rehydrates it. This is
+// the door the renders cannot be protected from after the fact: a record
+// persisted by an older build (or an import that landed mid-flight) with
+// a non-array files or an unparseable updatedAt rehydrates into EVERY
+// session — the store's own persist partialize calls files.map inside
+// setState (one bad record makes every setState in the app throw), and
+// the Explore list throws RangeError formatting the bad date. Repairing
+// state after rehydrate is too late for the setState that rehydration
+// itself performs, so the blob on disk is normalized here, at module
+// load, before any component effect runs. Idempotent: a clean blob is
+// left byte-identical.
+export function scrubPersistedRepos() {
+  try {
+    const ls = globalThis.localStorage;
+    if (!ls) return false;
+    const raw = ls.getItem("kiln-v2");
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    const repos = parsed?.state?.userRepos;
+    if (!Array.isArray(repos)) return false;
+    const next = repos.map(repairRecord);
+    if (!next.some((r, i) => r !== repos[i])) return false;
+    parsed.state.userRepos = next;
+    ls.setItem("kiln-v2", JSON.stringify(parsed));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 try {
+  scrubPersistedRepos();
   repairImportStubs();
   if (typeof store.subscribe === "function") {
     store.subscribe((state, prev) => {
@@ -231,7 +311,10 @@ export async function mergePublicAccount(owner, recs) {
     // record is the authoritative shape for the same repository.
     if (cur && !cur.forgeMirror && !isImportStub(cur)) continue;
     const chainAddress = `0x${(await sha256Hex(`${rec.owner}/${rec.name}`)).slice(0, 40)}`;
-    const pub = buildPublicRepo(rec, chainAddress);
+    // Normalized before it lands: the repair subscription runs on a
+    // microtask after setState, and a render must never meet the raw
+    // daemon shape first.
+    const pub = repairRecord(buildPublicRepo(rec, chainAddress));
     byId.set(rec.id, pub);
     merged.set(rec.id, pub);
     touched += 1;
