@@ -335,6 +335,10 @@ function wrapImportGithub() {
 
 function start() {
   const persist = store.persist;
+  // Identity arms lazily (daemon session restore + wallet link/backup
+  // wiring, in kiln-identity.js); a failure there must never block the
+  // forge boot.
+  import("./kiln-identity.js").then((m) => { try { m.armIdentity(); } catch {} }).catch(() => {});
   const run = () => { wrapImportGithub(); bootKilnAccount(); };
   if (persist?.hasHydrated?.()) run();
   else if (persist?.onFinishHydration) persist.onFinishHydration(run);
