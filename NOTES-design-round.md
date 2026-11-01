@@ -87,7 +87,14 @@ failures on external fetches — environmental, not page errors.)
 - AppShell edits: import { KilnCreateSheet }; mount beside the palette in L;
   bottom-bar Create (Q) Link→button dispatching `kiln:create` (visual identical);
   header New (R) Link→button dispatching the same (the sheet serves the desktop + too —
-  its first door is New repository, so nothing is lost). Status: TODO
+  its first door is New repository, so nothing is lost).
+Status: DONE — kiln-create.js class audit clean (45 tokens, none missing; backdrop dim,
+85dvh cap, top radius and safe-area padding are inline styles because the compiled CSS
+ships no bg-black/60, max-h-[85dvh] or rounded-t-2xl); load sim RAN CLEAN (AppShell +
+kiln-create); click probes: desktop / click "New" and mobile / tap "Create" both open
+the sheet (Create · New repository · Import from GitHub · New gist · New paper, with
+descriptions), 0 pageerrors both. The `g n` shortcut and the Studio doors strip still
+route directly, per the brief.
 
 ## Piece 2 — Papers Studio (plan)
 
