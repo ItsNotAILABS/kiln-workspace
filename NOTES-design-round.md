@@ -180,6 +180,24 @@ load (the daemon's cold public compute; the origin's 30s cache absorbs repeats).
   store-local repos browse from their store files. Breadcrumbs + back, read-only.
   Gap recorded: anonymous browsing beyond the public record's included contents
   (files >32KB or non-text) has no door today — the session door is the widening path.
+Build note (bug caught by the render gate, fixed same pass): lookupPublicAccount
+returns {ok, owner, repos}, NOT an array — the first hub build iterated the object
+and silently emptied the ALL segment (the gate showed the honest empty state
+instead of rows). Fixed in kiln-repos.js and in kiln-papers.js (whose index had
+been carried by its search leg alone; the account records now merge as designed).
+Status: DONE — class audits clean (kiln-repos 57 tokens, kiln-inbox 46, none
+missing); load sims RAN CLEAN (kiln-repos, kiln-inbox, notifications chunk,
+_owner with the wrapper, AppShell with the tab retarget). Cold renders, all
+0 pageerrors: /repos desktop + mobile — segments render; ALL lists the real
+public repos (auro/marketplace-paper, blockchain-kit, defi-kit,
+kiln-agent-kit) with forge details; Explorer walks marketplace-paper's real
+tree (site/, README.md 1.3 KB, deploy-pages.py 5.5 KB, paper.md 56.9 KB,
+paper.pdf 189.6 KB) via BOTH entry paths (row button and segment chips);
+MINE signed-out shows the honest prompt + public segments. /auro renders
+its profile exactly as before (wrapper regression gate). /notifications
+desktop: sections render with honest empty states for a fresh store, and
+the System section fills with the live forge commit stream (real commits,
+authors, relative times, repo deep links).
 
 ## Piece 4b — Inbox (plan)
 
@@ -200,7 +218,14 @@ load (the daemon's cold public compute; the origin's 30s cache absorbs repeats).
   Mark-all-read button (store markNoticesRead). Known interaction, recorded:
   the header bell panel marks all notices read when opened (AppShell R) — the
   inbox reflects whatever read state results; changing the bell is out of scope.
-- Status: TODO
+- Status: DONE (see the Piece 4a status block for gate evidence). One gate
+  shortfall, stated plainly: the /notifications MOBILE data leg was not
+  captured in the sandbox tonight — two attempts stalled in the headless
+  mobile renderer (0 pageerrors both, body never settled; the same wall the
+  v37 typing proof hit, while mobile /papers and /repos landed under the
+  same conditions). The component is viewport-agnostic (one max-w-3xl
+  column, no width-specific code) and its desktop render is fully proven;
+  include /notifications in the post-landing cold-render pass at 375px.
 
 ## Landing order (for the parent, after the crash fix)
 
