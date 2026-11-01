@@ -465,6 +465,231 @@ async function publicSearchBody(q) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Live forge account doc (GET /kiln-account.json)
+//
+// The frozen frontend boots its operator account from /kiln-account.json.
+// That file is a static snapshot (scripts/kiln-account.mjs): the kiln
+// account's own published drops, built from local files — NOT the forge.
+// This route keeps the snapshot's account and repos and APPENDS the forge's
+// real repositories for owner "auro", read live from the daemon with the
+// operator token (the forge-activity posture above), shaped into the same
+// store records and marked forgeBridge — so Studio opens on the forge's
+// actual repos alongside the account's drops. Any failure answers the
+// static snapshot unchanged: boot must never break on the bridge.
+// ---------------------------------------------------------------------------
+const ACCOUNT_DOC_OWNER = "auro";
+const ACCOUNT_DOC_REPO_CAP = 40;
+const ACCOUNT_DOC_FILE_CAP = 150;
+const ACCOUNT_DOC_CONTENT_CAP = 8;
+const ACCOUNT_DOC_CONTENT_MAX_BYTES = 12288;
+let accountDocCache = { at: 0, body: null };
+
+// Authenticated twin of daemonAnonJson: same one-retry shape, but with the
+// operator token, because the forge's working repos are private and this
+// doc is the operator's own boot surface. The timeout is long on purpose:
+// the daemon derives details live from git and a few repos answer in
+// ~20 s — this reader only ever runs inside the background doc build
+// (see accountDocBody), so a slow call blocks nothing user-facing.
+const ACCOUNT_DOC_FETCH_TIMEOUT_MS = 25000;
+async function daemonAuthJson(pathname, token) {
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(FORGE_DAEMON + pathname, {
+        headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+        signal: AbortSignal.timeout(ACCOUNT_DOC_FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`daemon ${res.status} for ${pathname.split("?")[0]}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  throw lastErr;
+}
+
+async function forgeRepoRecord(owner, name, token) {
+  const base = `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+  const details = await daemonAuthJson(`${base}/details`, token);
+  if (!details || details.empty) return null;
+  const branch = details.defaultBranch || "main";
+  // The tip is details.lastCommit — one call less per repo in a build that
+  // already makes hundreds; the daemon derives it from the same history.
+  const tip = details.lastCommit
+    ? {
+        sha: details.lastCommit.sha,
+        subject: details.lastCommit.subject || "",
+        date: details.lastCommit.date || null,
+      }
+    : null;
+  // Tree walk, level by level. All-or-nothing per repo, like the public
+  // walk: a partial tree presented as complete would be a false surface,
+  // so a failed level skips the repo (the caller's catch) instead.
+  const entries = [];
+  let level = [""];
+  while (level.length && entries.length < ACCOUNT_DOC_FILE_CAP) {
+    const next = [];
+    // Fetch a level in small batches and stop early once the file cap is
+    // hit — wide repos (minutely: 800+ files) otherwise cost a tree call
+    // per directory on the level for listings nobody will read, and the
+    // daemon's serialized git work makes each of those calls slow.
+    for (let i = 0; i < level.length && entries.length < ACCOUNT_DOC_FILE_CAP; i += 6) {
+      const datas = await Promise.all(
+        level.slice(i, i + 6).map((dir) =>
+          daemonAuthJson(
+            `${base}/tree?ref=${encodeURIComponent(branch)}${dir ? `&path=${encodeURIComponent(dir)}` : ""}`,
+            token,
+          ),
+        ),
+      );
+      for (const data of datas) {
+        for (const e of Array.isArray(data?.entries) ? data.entries : []) {
+          if (!e || !e.path) continue;
+          if (e.type === "tree") {
+            if (next.length < 32) next.push(e.path);
+            continue;
+          }
+          if (e.type !== "blob") continue;
+          entries.push({
+            path: e.path,
+            size: typeof e.size === "number" ? e.size : 0,
+            sha: e.sha || "",
+            language: publicLangOf(e.path),
+          });
+          if (entries.length >= ACCOUNT_DOC_FILE_CAP) break;
+        }
+      }
+    }
+    level = next;
+  }
+  const files = entries.map((f) => ({
+    path: f.path,
+    size: f.size,
+    sha: f.sha,
+    language: f.language,
+    message: tip ? tip.subject : "",
+    updatedAt: tip?.date || details.createdAt || null,
+  }));
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  const isRootReadme = (p) => !p.includes("/") && /^readme(\.md|\.markdown|\.txt)?$/i.test(p);
+  const candidates = entries
+    .filter((f) => (PUBLIC_TEXT_EXTS.has(publicExtOf(f.path)) || isRootReadme(f.path)) && f.size <= ACCOUNT_DOC_CONTENT_MAX_BYTES)
+    .sort((a, b) => (isRootReadme(b.path) ? 1 : 0) - (isRootReadme(a.path) ? 1 : 0))
+    .slice(0, ACCOUNT_DOC_CONTENT_CAP);
+  let readme = "";
+  await Promise.all(
+    candidates.map(async (f) => {
+      try {
+        const data = await daemonAuthJson(`${base}/contents?path=${encodeURIComponent(f.path)}`, token);
+        if (data && data.encoding === "base64" && typeof data.content === "string") {
+          const buf = Buffer.from(data.content, "base64");
+          if (!buf.includes(0)) {
+            const text = buf.toString("utf8");
+            byPath.get(f.path).content = text;
+            if (isRootReadme(f.path)) readme = text;
+          }
+        }
+      } catch {
+        /* content is decoration; the listing is the fact */
+      }
+    }),
+  );
+  const languages = {};
+  for (const f of entries) {
+    if (!f.language) continue;
+    languages[f.language] = (languages[f.language] || 0) + 1;
+  }
+  return {
+    id: `${owner}/${name}`,
+    owner,
+    name,
+    description: details.description || "",
+    topics: Array.isArray(details.topics) ? details.topics : [],
+    visibility: details.visibility || "private",
+    encrypted: false,
+    viewerGrant: true,
+    language: Object.entries(languages).sort((a, b) => b[1] - a[1])[0]?.[0] || "",
+    languages,
+    stars: 0,
+    forks: 0,
+    watchers: 0,
+    defaultBranch: branch,
+    createdAt: details.createdAt || null,
+    updatedAt: tip?.date || details.createdAt || null,
+    commitCount: typeof details.commitCount === "number" ? details.commitCount : 0,
+    fileCount: typeof details.fileCount === "number" ? details.fileCount : entries.length,
+    tip: tip ? { sha: tip.sha, shortSha: String(tip.sha).slice(0, 7), subject: tip.subject, date: tip.date } : null,
+    files,
+    readme: readme.slice(0, 4000),
+    kind: "code",
+    forgeBridge: true,
+  };
+}
+
+async function buildAccountDoc() {
+  const staticDoc = JSON.parse(fs.readFileSync(path.join(PUB, "kiln-account.json"), "utf8"));
+  const token = fs.readFileSync(path.join(os.homedir(), ".kiln-swarm", "api.token"), "utf8").trim();
+  if (!token) return staticDoc;
+  const listed = await daemonAuthJson("/git", token);
+  const repoList = Array.isArray(listed) ? listed : Array.isArray(listed?.repos) ? listed.repos : [];
+  const names = repoList
+    .filter((r) => r && r.owner === ACCOUNT_DOC_OWNER && r.repo)
+    .map((r) => r.repo)
+    .slice(0, ACCOUNT_DOC_REPO_CAP);
+  const have = new Set((staticDoc.repos || []).map((r) => r.id));
+  const out = [];
+  let idx = 0;
+  const worker = async () => {
+    while (idx < names.length) {
+      const name = names[idx++];
+      if (have.has(`${ACCOUNT_DOC_OWNER}/${name}`)) continue;
+      try {
+        const rec = await forgeRepoRecord(ACCOUNT_DOC_OWNER, name, token);
+        if (rec) out.push(rec);
+      } catch {
+        /* one bad repo must not sink the doc */
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(4, names.length)) }, worker));
+  out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return {
+    ...staticDoc,
+    repos: [...(staticDoc.repos || []), ...out],
+    forgeBridge: { owner: ACCOUNT_DOC_OWNER, reposAppended: out.length, at: new Date().toISOString() },
+  };
+}
+
+let accountDocBuilding = null;
+
+// Stale-while-revalidate: a full build walks 40 repos against a daemon that
+// derives everything live from git (a few repos answer in ~20 s), so a
+// build takes real time and must never sit in front of a boot fetch. The
+// first answer is the static snapshot — the honest floor — and the
+// background build replaces the cache when it lands; later answers are at
+// most one build cycle stale, and the frontend re-fetches this doc on
+// visibilitychange, so an open Studio picks the live doc up on return.
+async function accountDocBody() {
+  const now = Date.now();
+  if (accountDocCache.body && now - accountDocCache.at < 30000) return accountDocCache.body;
+  if (!accountDocBuilding) {
+    accountDocBuilding = (async () => {
+      try {
+        const body = JSON.stringify(await buildAccountDoc());
+        accountDocCache = { at: Date.now(), body };
+      } catch {
+        /* keep whatever we had; the static file is the floor */
+      } finally {
+        accountDocBuilding = null;
+      }
+    })();
+  }
+  if (accountDocCache.body) return accountDocCache.body;
+  return fs.readFileSync(path.join(PUB, "kiln-account.json"), "utf8");
+}
+
 const server = http.createServer(async (req, res) => {
   const u = url.parse(req.url, true);
   let pathname = decodeURIComponent(u.pathname || "/");
@@ -601,6 +826,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Live forge account doc — the static snapshot plus the forge's real
+  // repos (built above). Any failure serves the static file unchanged.
+  if (pathname === "/kiln-account.json" && req.method === "GET") {
+    try {
+      send(
+        res,
+        200,
+        {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "access-control-allow-origin": "*",
+        },
+        await accountDocBody(),
+      );
+    } catch {
+      sendFile(res, path.join(PUB, "kiln-account.json"), req);
+    }
+    return;
+  }
+
   if (pathname.startsWith("/api/kiln") || pathname === "/api/mcp") {
     try {
       const chunks = [];
@@ -634,7 +879,12 @@ const server = http.createServer(async (req, res) => {
         res.end();
         return;
       }
-      const result = await handleKilnApi(pathname, { method: req.method, bodyText, query: u.query || {} });
+      const result = await handleKilnApi(pathname, {
+        method: req.method,
+        bodyText,
+        query: u.query || {},
+        auth: req.headers.authorization || "",
+      });
       if (result) {
         send(res, result.status, result.headers, result.body);
         return;
@@ -701,4 +951,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("original kiln on :" + PORT);
+  // Warm the forge account doc in the background so the first Studio boot
+  // usually answers with the live doc already built.
+  accountDocBody().catch(() => {});
 });

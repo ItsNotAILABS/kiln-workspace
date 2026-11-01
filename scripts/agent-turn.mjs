@@ -28,6 +28,7 @@ import { INFRA_SCHEMA, INFRA_SET, renderCapsule, runInfraTool } from "./kiln-inf
  * @property {string} [method]
  * @property {string} [bodyText]
  * @property {Record<string, any>} [query]
+ * @property {string} [auth] - the caller's Authorization header, forwarded to the forge by the MCP bridge
  */
 
 /**
@@ -39,22 +40,22 @@ import { INFRA_SCHEMA, INFRA_SET, renderCapsule, runInfraTool } from "./kiln-inf
  */
 
 const TOOLS = [
-  { name: "kiln_list_files", description: "List files in a repository path. Always call this before you claim you know the tree. path empty = root.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" } }, required: ["repo"] } },
-  { name: "kiln_read_file", description: "Read a file from the working tree. You will see the real bytes. Use this instead of guessing contents.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" } }, required: ["repo", "path"] } },
-  { name: "kiln_write_file", description: "Write a file and settle a git commit on this repository. This is how agents code. Prefer complete files, not stubs.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" }, content: { type: "string" }, message: { type: "string" } }, required: ["repo", "path", "content"] } },
-  { name: "kiln_create_branch", description: "Create a branch at HEAD.", parameters: { type: "object", properties: { repo: { type: "string" }, name: { type: "string" } }, required: ["repo", "name"] } },
+  { name: "kiln_list_files", description: "List files in a repository path on the KILN forge — the daemon's real repos, the same ones the Agent Kit serves. repo is owner/name (e.g. auro/dfw-harness); a bare name resolves to owner auro, and kiln/<name> also resolves to auro/<name>. path empty = root. The MCP caller's Authorization header is forwarded to the forge: without a KILN credential only public repos answer. Always call this before you claim you know the tree.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" } }, required: ["repo"] } },
+  { name: "kiln_read_file", description: "Read a file from a KILN forge repo's working tree — the real bytes from the daemon. repo resolves like kiln_list_files. Use this instead of guessing contents.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" } }, required: ["repo", "path"] } },
+  { name: "kiln_write_file", description: "Write a file to a KILN forge repo as a REAL git commit through the forge contents API (author = the credential's principal). This is how agents code. repo resolves like kiln_list_files. Requires a KILN credential on the MCP request (Authorization: Bearer — operator token, account session, or agent token with the forge scope); the forge refuses anonymous writes. Prefer complete files, not stubs.", parameters: { type: "object", properties: { repo: { type: "string" }, path: { type: "string" }, content: { type: "string" }, message: { type: "string" } }, required: ["repo", "path", "content"] } },
+  { name: "kiln_create_branch", description: "Create a branch at HEAD on a KILN forge repo. Requires a KILN credential (see kiln_write_file).", parameters: { type: "object", properties: { repo: { type: "string" }, name: { type: "string" } }, required: ["repo", "name"] } },
   { name: "kiln_run", description: "Run one kilnsh command on this repository's computer. One command per call: ls, cat, git log, node, python, machine, ledger, seal. Do not chain with semicolons.", parameters: { type: "object", properties: { repo: { type: "string" }, command: { type: "string" } }, required: ["repo", "command"] } },
   { name: "kiln_machine", description: "Dump the sealed machine for a Git tree: shell, memory, models, preview domain, ledger.", parameters: { type: "object", properties: { repo: { type: "string" } }, required: ["repo"] } },
   { name: "kiln_bind_model", description: "Bind a model to this tree. Agents inherit it. Settles MACHINE.json as a git commit.", parameters: { type: "object", properties: { repo: { type: "string" }, model: { type: "string" } }, required: ["repo", "model"] } },
   { name: "kiln_remember", description: "Write an entry into this tree's memory banks (working, episodic, semantic, procedural, lattice, folder).", parameters: { type: "object", properties: { repo: { type: "string" }, kind: { type: "string" }, text: { type: "string" } }, required: ["repo", "text"] } },
   { name: "kiln_ledger", description: "Print this tree's machine ledger: Merkle of files, commits, and txs. Not the global chain.", parameters: { type: "object", properties: { repo: { type: "string" } }, required: ["repo"] } },
   { name: "kiln_log", description: "Write a line to the agent computer.", parameters: { type: "object", properties: { message: { type: "string" } }, required: ["message"] } },
-  { name: "kiln_open_pr", description: "Open a pull request.", parameters: { type: "object", properties: { repo: { type: "string" }, title: { type: "string" }, body: { type: "string" }, branch: { type: "string" } }, required: ["repo", "title"] } },
+  { name: "kiln_open_pr", description: "Open a pull request on a KILN forge repo: branch is the head branch, base is the repo's default branch. Requires a KILN credential (see kiln_write_file).", parameters: { type: "object", properties: { repo: { type: "string" }, title: { type: "string" }, body: { type: "string" }, branch: { type: "string" } }, required: ["repo", "title"] } },
   { name: "kiln_handoff", description: "Hand a task to another crew role on this tree. They keep working after you.", parameters: { type: "object", properties: { to: { type: "string" }, task: { type: "string" }, files: { type: "string" } }, required: ["to", "task"] } },
   { name: "kiln_spawn_agent", description: "Spawn a sub-agent on this tree. They get their own turns. Always pass task so they start working.", parameters: { type: "object", properties: { repo: { type: "string" }, role: { type: "string", description: "conductor|agi|architect|builder|reviewer|deployer|scout|cipher|indexer" }, name: { type: "string" }, model: { type: "string" }, task: { type: "string", description: "Job the sub-agent should run immediately" } }, required: ["repo"] } },
   { name: "kiln_spawn_subagent", description: "Spawn a sub-agent and give them a job. Same as kiln_spawn_agent. Use this to parallelize builder/reviewer/indexer work.", parameters: { type: "object", properties: { repo: { type: "string" }, role: { type: "string" }, name: { type: "string" }, task: { type: "string" } }, required: ["repo", "task"] } },
   { name: "kiln_crew", description: "Show the crew graph, constitution, and mailboxes on a repository.", parameters: { type: "object", properties: { repo: { type: "string" } }, required: ["repo"] } },
-  { name: "kiln_search", description: "Search file paths and contents on a repository.", parameters: { type: "object", properties: { q: { type: "string" }, repo: { type: "string" } }, required: ["q"] } },
+  { name: "kiln_search", description: "Search file paths in a KILN forge repo's tree (path match over the real forge tree). repo resolves like kiln_list_files.", parameters: { type: "object", properties: { q: { type: "string" }, repo: { type: "string" } }, required: ["q"] } },
   ...INFRA_SCHEMA,
 ];
 
@@ -69,6 +70,203 @@ function json(status, body) {
     },
     body: JSON.stringify(body),
   };
+}
+
+// ---------------------------------------------------------------------------
+// FORGE BRIDGE — the /api/mcp repo tools execute against the swarm daemon
+// (loopback :18787), the real forge the Agent Kit serves, instead of the
+// app's browser-side sealed trees. One KILN, not two.
+//
+// Repo resolution: "owner/name" is used as given; a bare "name" resolves to
+// owner "auro" (the forge's working namespace — all 40 daemon repos live
+// there); "kiln/<name>" also resolves to "auro/<name>", because the app
+// renders that namespace under the kiln account.
+//
+// Credential model: the MCP caller's Authorization header is forwarded to
+// the forge verbatim and the DAEMON enforces its own gates (accounts-only
+// reads, owner scoping, agent tokens need the forge scope). The bridge
+// never injects a credential of its own: anonymous callers can read public
+// repos, writes without a credential are refused before the daemon is even
+// asked, and a credentialed caller's errors are the daemon's own words.
+// ---------------------------------------------------------------------------
+const FORGE_DAEMON_URL = "http://127.0.0.1:18787";
+const FORGE_DEFAULT_OWNER = "auro";
+const FORGE_APP_OWNER_ALIAS = "kiln";
+const FORGE_READ_MAX_BYTES = 96_000;
+const FORGE_SEARCH_FILE_CAP = 400;
+const MCP_FORGE_TOOLS = new Set(["kiln_list_files", "kiln_read_file", "kiln_write_file", "kiln_create_branch", "kiln_open_pr", "kiln_search"]);
+const MCP_WRITE_TOOLS = new Set(["kiln_write_file", "kiln_create_branch", "kiln_open_pr"]);
+
+/** @param {string} method @param {string} pathname @param {{ auth?: string, body?: unknown }} [opts] */
+async function forgeCall(method, pathname, { auth, body } = {}) {
+  const headers = { accept: "application/json" };
+  if (auth) headers.authorization = auth;
+  let payload;
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+    payload = JSON.stringify(body);
+  }
+  let res;
+  try {
+    res = await fetch(FORGE_DAEMON_URL + pathname, {
+      method,
+      headers,
+      body: payload,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (e) {
+    return { ok: false, status: 0, error: `forge daemon unreachable: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const text = await res.text().catch(() => "");
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    /* keep the raw text for the error path */
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, error: (data && (data.error || data.message)) || text.slice(0, 300) || `forge ${res.status}`, data };
+  }
+  return { ok: true, status: res.status, data };
+}
+
+/** @param {unknown} raw @returns {{ owner: string, name: string, id: string } | null} */
+function resolveForgeRepo(raw) {
+  const cleaned = String(raw || "")
+    .trim()
+    .replace(/\.git$/i, "");
+  const parts = cleaned.split("/").filter(Boolean);
+  let owner;
+  let name;
+  if (parts.length >= 2) {
+    owner = parts[0];
+    name = parts.slice(1).join("/");
+  } else {
+    owner = FORGE_DEFAULT_OWNER;
+    name = parts[0] || "";
+  }
+  if (owner === FORGE_APP_OWNER_ALIAS) owner = FORGE_DEFAULT_OWNER;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(owner) || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name)) return null;
+  return { owner, name, id: `${owner}/${name}` };
+}
+
+/** @param {{ owner: string, name: string }} repo @param {{ status: number, error?: string }} r */
+function forgeErrText(repo, r) {
+  const hint =
+    r.status === 401 || r.status === 403
+      ? " The forge is accounts-only — present a KILN credential as Authorization: Bearer on the /api/mcp request (agent token with the forge scope, account session, or operator token); without one only public repos answer."
+      : "";
+  return `forge ${repo.id}: ${r.status ? `${r.status} ` : ""}${r.error || "request failed"}.${hint}`;
+}
+
+/** @param {string} name @param {Record<string, any>} args @param {string} auth @returns {Promise<string>} */
+async function runForgeTool(name, args, auth) {
+  const a = args && typeof args === "object" ? args : {};
+  if (MCP_WRITE_TOOLS.has(name) && !auth) {
+    return `${name} writes to the KILN forge, and the forge is accounts-only: this MCP request carried no credential. Retry with Authorization: Bearer <KILN credential> on the /api/mcp request — the operator token, an account session, or an agent token with the forge scope. The bridge forwards your credential to the forge; it never injects one of its own.`;
+  }
+  const repo = resolveForgeRepo(a.repo);
+  if (!repo) {
+    return `Cannot resolve repo ${JSON.stringify(a.repo || "")}. Use owner/name (e.g. auro/dfw-harness) or a bare repo name (owner defaults to ${FORGE_DEFAULT_OWNER}).`;
+  }
+  const base = `/v1/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
+  if (name === "kiln_list_files") {
+    const p = String(a.path || "").replace(/^\/+/, "");
+    const r = await forgeCall("GET", `${base}/tree${p ? `?path=${encodeURIComponent(p)}` : ""}`, { auth });
+    if (!r.ok) return forgeErrText(repo, r);
+    const entries = Array.isArray(r.data?.entries) ? r.data.entries : [];
+    const lines = entries.map((e) =>
+      e.type === "tree" ? `tree  ${e.name}/` : `blob  ${e.path || e.name}  (${typeof e.size === "number" ? e.size : 0} B)`,
+    );
+    return [`forge repo ${repo.id} @ ${r.data?.ref || "HEAD"} — ${entries.length} entries at /${p}`, ...lines].join("\n");
+  }
+  if (name === "kiln_read_file") {
+    const p = String(a.path || "").replace(/^\/+/, "");
+    if (!p) return "kiln_read_file needs a path.";
+    const r = await forgeCall("GET", `${base}/contents?path=${encodeURIComponent(p)}`, { auth });
+    if (!r.ok) return forgeErrText(repo, r);
+    if (!r.data || typeof r.data.content !== "string") return `forge ${repo.id}: ${p} did not answer readable content.`;
+    const buf = Buffer.from(r.data.content, r.data.encoding === "base64" ? "base64" : "utf8");
+    if (buf.includes(0)) return `forge ${repo.id}: ${p} is binary (${buf.length} B, sha ${r.data.sha || "?"}). Not returning bytes as text.`;
+    if (buf.length > FORGE_READ_MAX_BYTES) {
+      return buf.subarray(0, FORGE_READ_MAX_BYTES).toString("utf8") + `\n… [truncated at ${FORGE_READ_MAX_BYTES} of ${buf.length} B]`;
+    }
+    return buf.toString("utf8");
+  }
+  if (name === "kiln_write_file") {
+    const p = String(a.path || "").replace(/^\/+/, "");
+    if (!p) return "kiln_write_file needs a path.";
+    if (typeof a.content !== "string") return "kiln_write_file needs string content.";
+    // Optimistic concurrency: pass the current blob sha when the file exists.
+    let sha;
+    const cur = await forgeCall("GET", `${base}/contents?path=${encodeURIComponent(p)}`, { auth });
+    if (cur.ok && cur.data?.sha) sha = cur.data.sha;
+    const message = String(a.message || `write ${p} via kiln app MCP bridge`);
+    const r = await forgeCall("PUT", `${base}/contents`, {
+      auth,
+      body: { path: p, content: a.content, message, ...(sha ? { sha } : {}) },
+    });
+    if (!r.ok) return forgeErrText(repo, r);
+    const commitSha = typeof r.data?.commit === "string" ? r.data.commit : r.data?.commit?.sha || r.data?.sha || "";
+    return `committed ${commitSha ? String(commitSha).slice(0, 12) : "?"} on forge repo ${repo.id}: ${p} — ${message}`;
+  }
+  if (name === "kiln_create_branch") {
+    const branchName = String(a.name || "").trim();
+    if (!branchName) return "kiln_create_branch needs a name.";
+    const r = await forgeCall("POST", `${base}/branches`, { auth, body: { name: branchName } });
+    if (!r.ok) return forgeErrText(repo, r);
+    const at = r.data?.sha || r.data?.branch?.sha || "";
+    return `branch ${branchName} created on forge repo ${repo.id}${at ? ` @ ${String(at).slice(0, 12)}` : ""}`;
+  }
+  if (name === "kiln_open_pr") {
+    const head = String(a.branch || "").trim();
+    if (!head) return "kiln_open_pr needs branch (the head branch).";
+    const det = await forgeCall("GET", `${base}/details`, { auth });
+    const baseBranch = det.ok && det.data?.defaultBranch ? det.data.defaultBranch : "main";
+    const title = String(a.title || `PR from ${head}`);
+    const r = await forgeCall("POST", `${base}/pulls`, {
+      auth,
+      body: { title, ...(a.body ? { body: String(a.body) } : {}), head, base: baseBranch },
+    });
+    if (!r.ok) return forgeErrText(repo, r);
+    const num = r.data?.number ?? r.data?.pull?.number ?? r.data?.id ?? "?";
+    return `pull request #${num} opened on forge repo ${repo.id}: ${head} -> ${baseBranch} — ${title}`;
+  }
+  if (name === "kiln_search") {
+    const q = String(a.q || "")
+      .trim()
+      .toLowerCase();
+    if (!q) return "kiln_search needs q.";
+    // Path search over the real tree, walked level by level (the pattern
+    // serve-original's public surface uses); content search would mean
+    // fetching every blob, so this stays a path search and says so.
+    const matches = [];
+    let scanned = 0;
+    let level = [""];
+    while (level.length && scanned < FORGE_SEARCH_FILE_CAP) {
+      const datas = await Promise.all(
+        level.map((dir) => forgeCall("GET", `${base}/tree${dir ? `?path=${encodeURIComponent(dir)}` : ""}`, { auth })),
+      );
+      const next = [];
+      for (const d of datas) {
+        if (!d.ok) return forgeErrText(repo, d);
+        for (const e of Array.isArray(d.data?.entries) ? d.data.entries : []) {
+          if (!e || !e.path) continue;
+          if (e.type === "tree") {
+            if (next.length < 32) next.push(e.path);
+            continue;
+          }
+          if (e.type !== "blob") continue;
+          scanned += 1;
+          if (e.path.toLowerCase().includes(q)) matches.push(e.path);
+        }
+      }
+      level = next;
+    }
+    if (!matches.length) return `forge repo ${repo.id} — no path matches for ${JSON.stringify(q)} (path search over ${scanned} files).`;
+    return `forge repo ${repo.id} — ${matches.length} path match(es) for ${JSON.stringify(q)}:\n${matches.slice(0, 60).join("\n")}`;
+  }
+  return `Tool ${name} is not a forge tool.`;
 }
 
 /** @param {TurnPayload} data @returns {string} */
@@ -407,8 +605,8 @@ export async function runAgentTurnStream(data = {}, write = () => {}) {
   return result;
 }
 
-/** @param {unknown} body */
-export async function handleMcp(body) {
+/** @param {unknown} body @param {string} [auth] - the MCP caller's Authorization header, forwarded to the forge */
+export async function handleMcp(body, auth = "") {
   const req = typeof body === "string" ? JSON.parse(body || "{}") : body || {};
   const id = req.id ?? 1;
   const method = req.method || "";
@@ -427,6 +625,16 @@ export async function handleMcp(body) {
   if (method === "tools/call") {
     const name = req.params?.name || "";
     const args = req.params?.arguments || {};
+    if (MCP_FORGE_TOOLS.has(name)) {
+      const text = await runForgeTool(name, args && typeof args === "object" ? args : {}, auth);
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: String(text).slice(0, 24_000) }],
+        },
+      };
+    }
     if (INFRA_SET.has(name)) {
       const out = await runInfraTool(name, args && typeof args === "object" ? args : {});
       return {
@@ -617,7 +825,7 @@ export async function handleKilnApi(pathname, req) {
       data = {};
     }
     try {
-      return json(200, await handleMcp(data));
+      return json(200, await handleMcp(data, typeof req.auth === "string" ? req.auth : ""));
     } catch (e) {
       return json(500, { jsonrpc: "2.0", error: { code: -32603, message: e instanceof Error ? e.message : "mcp failed" } });
     }
