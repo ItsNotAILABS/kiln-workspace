@@ -6,7 +6,7 @@
  *     Worker assets — production is NOT tied to Grok servers.
  *   - /_serverFn/*: the app's designed stub, {result:null} (parity
  *     with scripts/serve-original.mjs).
- *   - /api/kiln*, /api/mcp, /api/github*: proxied through the tunnel
+ *   - /api/kiln*, /api/mcp, /api/github*, /api/forge*: proxied through the tunnel
  *     to the original server running on the architect's iron
  *     (kiln-original.service, :8931) — agent turns, the Kiln API and
  *     the GitHub engine live there, SSE streams pass through.
@@ -31,7 +31,7 @@ export default {
       });
     }
 
-    if (path.startsWith("/api/kiln") || path === "/api/mcp" || path.startsWith("/api/github")) {
+    if (path.startsWith("/api/kiln") || path === "/api/mcp" || path.startsWith("/api/github") || path.startsWith("/api/forge")) {
       const origin = env.ORIGINAL_API_URL || FALLBACK_ORIGIN;
       const target = new URL(path + url.search, origin);
       const headers = new Headers(request.headers);
@@ -49,7 +49,20 @@ export default {
       return env.ASSETS.fetch(new Request(new URL("/freeze/index.html", url), request));
     }
 
-    const resp = await env.ASSETS.fetch(request);
+    let resp;
+    try {
+      resp = await env.ASSETS.fetch(request);
+    } catch {
+      // The assets binding throws on non-GET/HEAD requests whose path
+      // engages its not-found fallback (measured live: error 1101 on
+      // POST /explore and POST /, while a real asset file answers 405).
+      // Every dynamic POST belongs to /api/* or /_serverFn/* above, so
+      // anything that lands here is an honest 404.
+      return new Response("not found", {
+        status: 404,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
     if (resp.status === 404) {
       if (path.startsWith("/assets/")) return resp;
       // SPA fallback, scoped to navigation-like GETs: app routes are
