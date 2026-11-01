@@ -304,13 +304,23 @@ function relTime(iso) {
 }
 
 export function KilnAccountLookup() {
-  const [q, setQ] = R.useState("");
+  // The handle input is UNCONTROLLED (defaultValue + ref), deliberately:
+  // as a controlled input its text was owned by React state, and on the
+  // architect's phone keystrokes stopped landing in it — under app-wide
+  // render pressure (the store republishes constantly: chain ticks, forge
+  // merges, repairs) a controlled field can have its value rewritten faster
+  // than the IME delivers it, and the field looks dead while the keyboard
+  // is up. An uncontrolled field's text belongs to the browser: no render
+  // can reset it, and the lookup reads the DOM value at fire time.
+  const inputRef = R.useRef(null);
   const [busy, setBusy] = R.useState(false);
   const [err, setErr] = R.useState("");
   const [result, setResult] = R.useState(null);
 
+  const currentValue = () => (inputRef.current ? inputRef.current.value : "");
+
   const run = async (raw) => {
-    const owner = normalizeHandle(raw ?? q);
+    const owner = normalizeHandle(raw ?? currentValue());
     if (!owner) return;
     setBusy(true);
     setErr("");
@@ -349,8 +359,15 @@ export function KilnAccountLookup() {
         children: [
           j.jsx("input", {
             className: "input flex-1",
-            value: q,
-            onChange: (e) => setQ(e.target.value),
+            ref: inputRef,
+            defaultValue: "",
+            type: "text",
+            name: "kiln-handle",
+            autoComplete: "off",
+            autoCapitalize: "none",
+            autoCorrect: "off",
+            spellCheck: false,
+            enterKeyHint: "search",
             placeholder: "account handle — try auro",
             "aria-label": "Kiln account handle",
           }),
@@ -372,7 +389,7 @@ export function KilnAccountLookup() {
               type: "button",
               className: "chip",
               onClick: () => {
-                setQ(c);
+                if (inputRef.current) inputRef.current.value = c;
                 void run(c);
               },
               children: c,
