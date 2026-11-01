@@ -63,9 +63,15 @@ description/topics/visibility, file listings, tip commit, and README/small
 text contents. The build runs in the background (stale-while-revalidate —
 the daemon derives repo details live from git and a full pass takes real
 time): the first answer is the static snapshot, the live doc replaces it
-when the build lands, so boot never waits on or breaks on the bridge. The Cloudflare Worker for
-kiln.pocketnova.app proxies `/kiln-account.json` to this origin like the
-other API paths, so the live app boots from the same doc as the local door.
+when the build lands, so boot never waits on or breaks on the bridge.
+On kiln.pocketnova.app the Worker proxies this path to the origin too —
+but the path also exists as a static asset, and on this deployment the
+assets layer answers existing asset paths itself (verified live: after
+the proxy shipped, the edge kept serving the cached asset until the asset
+itself changed). So the deploy pipeline (`deploy-original-worker.py`)
+refreshes the asset from the origin's live doc on every deploy: the
+public door's boot doc is the merged doc as of the last deploy, while the
+local door and the tunnel origin serve it fully live.
 
 ## What still lives in app state (labeled, not hidden)
 
