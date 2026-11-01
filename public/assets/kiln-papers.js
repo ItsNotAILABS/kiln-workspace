@@ -439,7 +439,8 @@ export function KilnPapersStudio() {
       }
       for (const owner of SEED_ACCOUNTS) {
         try {
-          add(await lookupPublicAccount(owner));
+          const out = await lookupPublicAccount(owner);
+          add(out && out.repos);
         } catch {
           failed = true;
         }
