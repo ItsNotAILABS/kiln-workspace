@@ -11,6 +11,12 @@
  * a later lookup refreshes them. A local (non-mirror) repo or profile with
  * the same id/handle is never overwritten, and the viewer's own account is
  * never merged over — local state stays authoritative for your own handle.
+ *
+ * One exception, documented at isImportStub below: capsule-imported records
+ * are daemon-shaped stubs (missing fields the views format unconditionally,
+ * owner force-written to the importing account). A stub is not a local repo,
+ * so the daemon's public record replaces it, and a repair pass keeps every
+ * stub in the store renderable even before any lookup runs.
  */
 import { i as reactNs, t as React } from "./react-SIfiwpqq.js";
 import { t as jsxmod } from "./jsx-runtime-0vZSBttN.js";
@@ -54,6 +60,7 @@ export function buildPublicRepo(rec, chainAddress) {
     createdAt: rec.createdAt || rec.updatedAt || "2026-01-01T00:00:00.000Z",
     updatedAt: rec.updatedAt || rec.createdAt || "2026-01-01T00:00:00.000Z",
     tvlKln: 0,
+    listedKln: 0,
     kind: "code",
     forgeMirror: true,
     forgePublic: true,
@@ -90,6 +97,121 @@ export function buildPublicProfile(owner, recs) {
   };
 }
 
+// --- import stubs --------------------------------------------------------------
+//
+// The forge capsule import (kiln-forge.js, fed by kiln-account.json) lands
+// daemon-shaped records in the store: no tvlKln / listedKln / chainAddress,
+// and an owner field force-written to the importing account ("kiln") even
+// though the record's id belongs to someone else. The views format tvlKln
+// unconditionally (the store KLN formatter throws on undefined), read
+// chainAddress as a string, and select a profile's repositories by owner —
+// so a stub crashes Explore and every repo page it appears on, and hides
+// its owner's repositories from their profile. A record the app itself
+// created always carries the full shape, so these tells are reliable:
+// a stub is an imported record, never a genuine local repo.
+
+export function isImportStub(rec) {
+  if (!rec || !rec.id) return false;
+  if (rec.forgeBridge === true) return true;
+  if (typeof rec.tvlKln !== "number") return true;
+  const seg = String(rec.id).split("/")[0];
+  return !!seg && rec.owner !== seg;
+}
+
+// Fill only what a stub lacks, with the honest values the daemon's own
+// records carry: these repos hold no KLN TVL (0, exactly what the capsule
+// writes for its fully-shaped records) and no marketplace listing (0).
+// Present values are never overwritten, and the owner is restored from
+// the record's own id — the id is the daemon's truth.
+export function repairImportStub(rec) {
+  if (!isImportStub(rec)) return rec;
+  const seg = String(rec.id).split("/")[0];
+  const fixOwner = !!seg && rec.owner !== seg;
+  const fixTvl = typeof rec.tvlKln !== "number";
+  const fixListed = typeof rec.listedKln !== "number";
+  // Idempotent: a stub whose fields are already filled (it keeps its
+  // forgeBridge tell) is returned as-is, so repair passes settle instead
+  // of churning the store with fresh identities.
+  if (!fixOwner && !fixTvl && !fixListed) return rec;
+  const out = { ...rec };
+  if (fixOwner) out.owner = seg;
+  if (fixTvl) out.tvlKln = 0;
+  if (fixListed) out.listedKln = 0;
+  return out;
+}
+
+const chainFillPending = new Set();
+
+async function fillStubChainAddresses(recs) {
+  const missing = (recs || []).filter((r) => r && typeof r.chainAddress !== "string" && !chainFillPending.has(r.id));
+  if (!missing.length) return;
+  for (const r of missing) chainFillPending.add(r.id);
+  try {
+    const derived = new Map();
+    for (const r of missing) {
+      // Same derivation buildPublicRepo merges use for a mirrored repo.
+      derived.set(r.id, `0x${(await sha256Hex(`${r.owner}/${r.name}`)).slice(0, 40)}`);
+    }
+    const patch = (list) =>
+      (list || []).map((r) => (r && derived.has(r.id) && typeof r.chainAddress !== "string" ? { ...r, chainAddress: derived.get(r.id) } : r));
+    const st = store.getState();
+    const nextRepos = patch(st.userRepos);
+    if (nextRepos.some((r, i) => r !== (st.userRepos || [])[i])) store.setState({ userRepos: nextRepos });
+    if (Array.isArray(globalThis.__KILN_FORGE_REPOS)) globalThis.__KILN_FORGE_REPOS = patch(globalThis.__KILN_FORGE_REPOS);
+  } catch {
+    /* a failed derivation leaves the record as-is; the numeric fills above
+       already removed the crash, this only restores the header chip */
+  } finally {
+    for (const r of missing) chainFillPending.delete(r.id);
+  }
+}
+
+// Repair stubs wherever the capsule import put them: state.userRepos and
+// the forge record list the store's repo selector merges from. Runs at
+// module load and again whenever userRepos changes (the import lands
+// asynchronously, after first paint), so the store never sits holding a
+// record the views cannot render. Only stub records change; everything
+// else keeps its identity, so this settles instead of looping.
+export function repairImportStubs() {
+  let changed = false;
+  try {
+    const st = store.getState();
+    const repos = st.userRepos || [];
+    const next = repos.map(repairImportStub);
+    if (next.some((r, i) => r !== repos[i])) {
+      store.setState({ userRepos: next });
+      changed = true;
+    }
+    if (Array.isArray(globalThis.__KILN_FORGE_REPOS)) {
+      const forge = globalThis.__KILN_FORGE_REPOS;
+      const nextForge = forge.map(repairImportStub);
+      if (nextForge.some((r, i) => r !== forge[i])) {
+        globalThis.__KILN_FORGE_REPOS = nextForge;
+        changed = true;
+      }
+    }
+    const all = [...(store.getState().userRepos || []), ...(globalThis.__KILN_FORGE_REPOS || [])];
+    // Any record still missing a chain address gets the derived one filled
+    // asynchronously (the header shortens it with startsWith/slice — it
+    // must be a string before a repo page renders the record).
+    if (all.some((r) => r && typeof r.chainAddress !== "string")) void fillStubChainAddresses(all);
+  } catch {
+    /* the repair must never break the app it is protecting */
+  }
+  return changed;
+}
+
+try {
+  repairImportStubs();
+  if (typeof store.subscribe === "function") {
+    store.subscribe((state, prev) => {
+      if (state.userRepos !== prev.userRepos) queueMicrotask(repairImportStubs);
+    });
+  }
+} catch {
+  /* module load continues without the repair hook */
+}
+
 // --- store merge -------------------------------------------------------------
 
 export async function mergePublicAccount(owner, recs) {
@@ -99,13 +221,19 @@ export async function mergePublicAccount(owner, recs) {
   if (s.wallet?.handle && s.wallet.handle.toLowerCase() === String(owner).toLowerCase()) return 0;
   const byId = new Map();
   for (const r of s.userRepos || []) if (r?.id) byId.set(r.id, r);
+  const merged = new Map();
   let touched = 0;
   for (const rec of list) {
     if (!rec?.id || !rec?.name || !rec?.owner) continue;
     const cur = byId.get(rec.id);
-    if (cur && !cur.forgeMirror) continue; // a local repo with this id wins, untouched
+    // A genuine local repo with this id wins, untouched. An import stub
+    // (capsule-shaped, fields missing) does not: the daemon's public
+    // record is the authoritative shape for the same repository.
+    if (cur && !cur.forgeMirror && !isImportStub(cur)) continue;
     const chainAddress = `0x${(await sha256Hex(`${rec.owner}/${rec.name}`)).slice(0, 40)}`;
-    byId.set(rec.id, buildPublicRepo(rec, chainAddress));
+    const pub = buildPublicRepo(rec, chainAddress);
+    byId.set(rec.id, pub);
+    merged.set(rec.id, pub);
     touched += 1;
   }
   if (!touched) return 0;
@@ -114,6 +242,12 @@ export async function mergePublicAccount(owner, recs) {
   const prev = profiles[owner];
   if (!prev || prev.forgeMirror) profiles[owner] = { ...(prev || {}), ...buildPublicProfile(owner, list) };
   store.setState({ userRepos: [...byId.values()], profiles });
+  // The store's repo selector merges the forge record list first and takes
+  // a merged repo's owner from it — replace stub entries there too, or the
+  // deficient copy (and its wrong owner) is resurrected on every render.
+  if (merged.size && Array.isArray(globalThis.__KILN_FORGE_REPOS)) {
+    globalThis.__KILN_FORGE_REPOS = globalThis.__KILN_FORGE_REPOS.map((r) => (r && merged.has(r.id) && isImportStub(r) ? merged.get(r.id) : r));
+  }
   return touched;
 }
 
