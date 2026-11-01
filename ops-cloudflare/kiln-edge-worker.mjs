@@ -10,7 +10,9 @@
  *     to the original server running on the architect's iron
  *     (kiln-original.service, :8931) — agent turns, the Kiln API and
  *     the GitHub engine live there, SSE streams pass through.
- *   - Everything else: static file, else the SPA shell (index.html);
+ *   - Everything else: static file, else the SPA shell (fetched as / —
+ *     the assets binding 307-redirects /index.html to /, so fetching the
+ *     shell by name bounced every cold deep link home);
  *     missing /assets/* stays a real 404, like the original server.
  */
 const FALLBACK_ORIGIN = "https://kiln-original.medinatechlabs.net";
@@ -50,7 +52,19 @@ export default {
     const resp = await env.ASSETS.fetch(request);
     if (resp.status === 404) {
       if (path.startsWith("/assets/")) return resp;
-      return env.ASSETS.fetch(new Request(new URL("/index.html", url), request));
+      // SPA fallback, scoped to navigation-like GETs: app routes are
+      // extensionless or arrive with Accept: text/html. API-shaped paths,
+      // non-GET methods and file-like paths keep the honest 404.
+      if (path.startsWith("/api/")) return resp;
+      if (request.method !== "GET" && request.method !== "HEAD") return resp;
+      const accept = request.headers.get("accept") || "";
+      const lastSeg = path.slice(path.lastIndexOf("/") + 1);
+      if (!accept.includes("text/html") && lastSeg.includes(".")) return resp;
+      // Fetch "/" rather than "/index.html": the assets binding
+      // canonicalizes /index.html with a 307 redirect to /, which is what
+      // used to bounce every cold deep link back home. "/" serves the
+      // app shell directly with a 200.
+      return env.ASSETS.fetch(new Request(new URL("/", url), request));
     }
     return resp;
   },
