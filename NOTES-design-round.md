@@ -127,7 +127,31 @@ route directly, per the brief.
   papers-workflow branch activates on the daemon). Without a session: deep link to the
   repo's /releases page. Registry probe: GET /api/forge/v1/papers on mount — 404 today;
   when it answers, records take precedence for version/ID/citation display.
-- marketplace-paper site restyle: forge PR (see repo work below). Status: TODO
+- Live-record wrinkle found during the build: auro/marketplace-paper has paper.md +
+  paper.pdf but NO paper.json yet (record zero's manifest is the workflow lane's
+  activation act — not pre-empted here). Manifest-less papers fall back to the repo's
+  own README (title from its H1 + subtitle line, byline authors, "What this is"
+  abstract) — real record data only; manifest/registry supersede when they land.
+Status: DONE (app side) — class audit clean (59 tokens); load sim RAN CLEAN; cold
+render /papers desktop: suite hero + doors render, the index row arrives with the
+real record (kiln:auro/marketplace-paper · full title · "Auro (ItsNotAILABS)" ·
+abstract · Record page door), Research list preserved below, 0 pageerrors. The
+index's data legs measured: search ~12s, auro account ~25s under tonight's host
+load (the daemon's cold public compute; the origin's 30s cache absorbs repeats).
+- marketplace-paper site restyle: DONE via forge PR #8 (branch record-layout,
+  commit 1eb622d, merged 4c472ed, head branch deleted). Surgical additions only:
+  Publication record card (KILN ID + the identifier-honesty line, title/author/
+  version/publisher, canonical + repo links), Files box (PDF 194,161 bytes,
+  paper.md 58,238 bytes), Version history (v1.1 current — the only evidenced
+  release), TOC entry, citation gains the KILN ID and its BibTeX URL is corrected
+  to the canonical KILN Pages address (the footer already named KILN canonical;
+  the BibTeX still pointed at the mirror). NO license printed — the paper
+  declares none, so the record claims none. Gates: HTML balanced; 375px
+  docW == 375 with an overflow signature identical to the pristine page (the
+  mobile TOC's internal scroll); 1280px zero overflow. Post-merge verification:
+  https://kiln.pocketnova.app/papers/marketplace-paper/ → 200, 79,568 bytes,
+  record card present (the merge was the deploy); Cloudflare mirror redeployed
+  (deployment d7c2a11a) and verified byte-identical.
 
 ## Piece 4a — Repos tab (plan)
 
