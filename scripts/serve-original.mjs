@@ -708,6 +708,51 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // KILN Pages proxy: /papers/<repo>/... -> daemon
+  // http://127.0.0.1:18787/pages/auro/<repo>/... — the paper sites
+  // designated in the forge (owner is fixed to auro, the papers owner).
+  // GET/HEAD only; status, content type and body pass through.
+  if (pathname.startsWith("/papers/")) {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      send(res, 405, { "content-type": "text/plain; charset=utf-8" }, "method not allowed");
+      return;
+    }
+    const rest = pathname.slice("/papers/".length);
+    const slash = rest.indexOf("/");
+    const repo = slash === -1 ? rest : rest.slice(0, slash);
+    const remainder = slash === -1 ? "/" : rest.slice(slash);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(repo)) {
+      send(res, 404, { "content-type": "text/plain; charset=utf-8" }, "not found");
+      return;
+    }
+    const target = `/pages/auro/${encodeURIComponent(repo)}${remainder}${u.search || ""}`;
+    const headers = {};
+    if (req.headers.accept) headers.accept = req.headers.accept;
+    const upstream = http.request(
+      { host: "127.0.0.1", port: 18787, path: target, method: req.method, headers },
+      (up) => {
+        const parts = [];
+        up.on("data", (d) => parts.push(d));
+        up.on("end", () => {
+          const out = { "cache-control": "no-store" };
+          if (up.headers["content-type"]) out["content-type"] = up.headers["content-type"];
+          if (up.headers["content-length"]) out["content-length"] = up.headers["content-length"];
+          send(res, up.statusCode || 502, out, Buffer.concat(parts));
+        });
+      },
+    );
+    upstream.on("error", (e) => {
+      send(
+        res,
+        502,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: `pages daemon unreachable: ${e.message}` }),
+      );
+    });
+    upstream.end();
+    return;
+  }
+
   // Forge API proxy: /api/forge/X -> daemon http://127.0.0.1:18787/X
   // The caller's Authorization header is forwarded verbatim; no token is
   // injected server-side — the daemon enforces accounts-only itself (401
