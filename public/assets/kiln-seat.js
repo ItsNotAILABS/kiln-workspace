@@ -9,6 +9,7 @@ import { installKilnDomain } from "./kiln-domain.js";
 import { installGWebGpu } from "./gwebgpu-plane.js";
 import { installKilnNav } from "./kiln-nav.js";
 import { installKilnPhone } from "./kiln-phone.js";
+import { installKilnMarket } from "./kiln-market.js";
 
 (function slimOriginCatalog() {
   if (globalThis.__KILN_SLIM_ORIGIN) return;
@@ -479,6 +480,11 @@ export function installKilnSeat() {
     installKilnPhone();
   } catch {
     /* the seat panel is best-effort */
+  }
+  try {
+    installKilnMarket();
+  } catch {
+    /* the shelf is best-effort */
   }
   try {
     installKilnStudio();

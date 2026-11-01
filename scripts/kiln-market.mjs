@@ -136,6 +136,7 @@ function pub(p) {
     sold: p.sold,
     bytes: p.bytes,
     sha256: p.sha256,
+    description: p.description || "",
   };
 }
 
@@ -215,14 +216,23 @@ export function claimOpening(handle, opts = {}) {
   return { ...viewOf(book, h), minted: true, entry: entry.id };
 }
 
-export function catalog({ seller } = {}, opts = {}) {
+export function catalog({ seller, q } = {}, opts = {}) {
   const book = load(opts);
   const want = seller ? norm(seller) : "";
-  const products = book.products.filter((p) => p.stock > 0 && (!want || p.seller === want)).map(pub);
-  return { ok: true, rail: RAIL, not: NOT_A_BANK, products };
+  const query = String(q || "").trim().toLowerCase().slice(0, 80);
+  const products = book.products
+    .filter((p) => {
+      if (p.stock < 1) return false;
+      if (want && p.seller !== want) return false;
+      if (!query) return true;
+      const hay = `${p.title} ${p.seller} ${p.path} ${p.description || ""}`.toLowerCase();
+      return hay.includes(query);
+    })
+    .map(pub);
+  return { ok: true, rail: RAIL, not: NOT_A_BANK, q: query, products };
 }
 
-export function listProduct({ seller, repoId, path: rel, title, cents, stock } = {}, opts = {}) {
+export function listProduct({ seller, repoId, path: rel, title, cents, stock, description } = {}, opts = {}) {
   const who = norm(seller);
   const repo = String(repoId || "").trim();
   if (!who || who === "kiln") return fail("not a seat");
@@ -252,11 +262,27 @@ export function listProduct({ seller, repoId, path: rel, title, cents, stock } =
     sold: 0,
     bytes: buf.length,
     sha256: createHash("sha256").update(buf).digest("hex"),
+    description: String(description || "").replace(/\s+/g, " ").trim().slice(0, 240),
     listedAt: new Date().toISOString(),
   };
   fs.mkdirSync(path.dirname(goodsFile(opts, id)), { recursive: true });
   fs.writeFileSync(goodsFile(opts, id), buf);
   book.products.push(product);
+  save(book, opts);
+  return { ok: true, rail: RAIL, not: NOT_A_BANK, product: pub(product) };
+}
+
+export function unlistProduct({ seller, productId } = {}, opts = {}) {
+  const who = norm(seller);
+  const id = String(productId || "").trim();
+  if (!who || who === "kiln") return fail("not a seat");
+  if (!id) return fail("product required");
+  const book = load(opts);
+  const product = book.products.find((p) => p.id === id);
+  if (!product) return fail("not on the shelf");
+  if (product.seller !== who) return fail("not your listing");
+  if (product.stock < 1) return fail("already off the shelf");
+  product.stock = 0;
   save(book, opts);
   return { ok: true, rail: RAIL, not: NOT_A_BANK, product: pub(product) };
 }
