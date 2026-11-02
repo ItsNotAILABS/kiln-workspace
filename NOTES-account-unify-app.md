@@ -102,9 +102,36 @@ prove against an EPHEMERAL instance of the merged daemon code.
       The same flows are proven end-to-end at API level with the app's own
       client + crypto (23/23 above), and every route renders clean cold on
       the staged origin. NOT claimed as browser-proven.
-- [ ] Worker bindings verify → deploy → served-bytes sha256 (landing step —
-      result appended at the bottom of this file)
+- [x] Worker bindings verify → deploy → served-bytes sha256 — DONE, see
+      Landing result below
 
 ## Landing
 - Branch commits: f7fa9e8 notes · fa1ff09 identity-core · fc63522 phantom-ul ·
-  a242514 identity panel + login · 48bdfd1 agents · NOTES final (this file).
+  a242514 identity panel + login · 48bdfd1 agents · 836e6a6 NOTES final.
+- LANDED on improve/ws-system-ui (tip re-checked: still 684c67a) by cherry-pick:
+  2100887 · c14ef67 · 3a42c8e · d7ea9bb · 30d8e1f · 88cc4c8. Main-tree foreign
+  WIP untouched (M ops-cloudflare/README.md, M public/kiln-account.json,
+  ?? data/ — identical before and after).
+- DEPLOYED 2026-11-02: Worker version 47, version_id
+  193059ea-bf58-4430-9d0c-57f257178e89, deployment id
+  622a5f8e-f6e5-4161-a163-e5e7b11faa08 (100%). Bindings verified on the version
+  BEFORE rollout: ASSETS (assets) · ORIGINAL_API_URL plain_text
+  https://kiln-original.medinatechlabs.net · KILN_SWARM_TOKEN secret_text
+  (keep_bindings). Deploy ran from the worktree's ops-cloudflare (its public/
+  is byte-identical to the landed tree — the only diff vs the main tree is the
+  foreign-WIP kiln-account.json, which therefore did NOT ship).
+- Served-bytes sha256 vs https://kiln.pocketnova.app: ALL 8 changed assets
+  MATCH (kiln-identity-core.js, kiln-identity.js, kiln-phantom-ul.js,
+  kiln-nacl.min.js, kiln-agents.js, kiln-forge.js, login-CNvQADsL.js,
+  _owner-B3Oc7_zJ.js).
+- Live HTTP: /login, /agents, /agents/invite/<token> all 200 with the SPA
+  shell. Live-domain headless render was NOT captured (sandbox egress latency
+  4–11 s per request starved the probe; body empty through each 90 s window,
+  0 pageerrors) — render evidence stands on the staged origin over identical
+  bytes. Stated plainly, not papered over.
+- STAGED vs LIVE: the APP is live now (v47). The daemon routes it calls for
+  wallet sign-in + agent accounts/invites are still STAGED — they activate at
+  the next Doctor boot of the daemon from feat/l1-compute @ 64824a0. Until
+  then the doors show their honest "activating" state and steer to password;
+  password sign-in, wallet linking/backup, and delegated agents are live
+  today as before.
