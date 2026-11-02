@@ -686,6 +686,13 @@ export function KilnIdentityPanel() {
   // wallet sign-in doors
   const [walletDoorOff, setWalletDoorOff] = R.useState(false);
   const [unlinkedAddr, setUnlinkedAddr] = R.useState("");
+  // OAuth doors: provider-not-configured is an honest inline state in its
+  // own slot — never the red error banner, never "Sign-in failed".
+  const [oauthOff, setOAuthOff] = R.useState("");
+  // handle-pick (OAuth pending): picked handle/name + inline form error
+  const [pkOwner, setPkOwner] = R.useState("");
+  const [pkName, setPkName] = R.useState("");
+  const [pkErr, setPkErr] = R.useState("");
 
   const wallet = store((s) => s.wallet);
 
@@ -699,6 +706,8 @@ export function KilnIdentityPanel() {
       try {
         await processUlReturn();
       } catch {}
+      const on = takeOAuthNotice();
+      if (on) setNote(on);
       const st = takeUlStatus();
       if (st) {
         if (st.kind === "error") setErr(st.text);
@@ -745,6 +754,54 @@ export function KilnIdentityPanel() {
     run(async () => {
       await signIn(email.trim(), password);
     }, "Signed in — your account and linked wallets are restored on this browser.");
+
+  // OAuth start: preflight first (a navigation to a not-configured
+  // daemon would show raw 503 JSON), navigate only when configured.
+  const doOAuthStart = (provider) =>
+    (async () => {
+      setBusy(true);
+      setErr("");
+      setNote("");
+      setOAuthOff("");
+      try {
+        const returnPath = location.pathname || "/login";
+        const pf = await client.oauthPreflight(provider, returnPath);
+        if (!pf.configured) {
+          setOAuthOff(OAUTH_NOT_CONFIGURED_TEXT[provider] || OAUTH_NOT_CONFIGURED_TEXT.google);
+          setBusy(false);
+          return;
+        }
+        location.href = client.oauthStartUrl(provider, returnPath);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "That sign-in couldn't be started");
+        setBusy(false);
+      }
+    })();
+
+  const doOAuthComplete = () =>
+    (async () => {
+      setBusy(true);
+      setPkErr("");
+      setErr("");
+      setNote("");
+      try {
+        const owner = pkOwner.trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(owner)) throw new Error("Pick a handle: lowercase letters, numbers and dashes, up to 64 characters");
+        await completeOAuthSignup({ owner, name: pkName.trim() || owner });
+        setNote("Account created — you're signed in. Link a wallet below and it restores on any browser.");
+      } catch (e) {
+        // 409 (handle taken) and every other refusal stay INLINE in the
+        // form; the pending token survives, so picking another handle
+        // and retrying just works.
+        if (e instanceof IdentityApiError && e.status === 409) {
+          setPkErr(`@${pkOwner.trim().toLowerCase()} is taken — pick another handle.`);
+        } else {
+          setPkErr(e instanceof Error ? e.message : "That handle couldn't be claimed");
+        }
+      } finally {
+        setBusy(false);
+      }
+    })();
 
   // Wallet-door failures share one translation: a staged daemon turns
   // the door "activating" (honest, steered to password); a validly
@@ -994,12 +1051,81 @@ export function KilnIdentityPanel() {
   if (err) children.push(j.jsx("p", { className: "mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-red-500", children: err }));
   if (note) children.push(j.jsx("p", { className: "mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-seal", children: note }));
 
-  if (!snap.session) {
+  if (!snap.session && getOAuthPending()) {
+    // ---- finish your KILN account (OAuth pending: provider verified,
+    // handle still to pick). Replaces the sign-in doors until completed
+    // or cancelled; a taken handle errors inline and the pending token
+    // survives for another pick.
+    children.push(
+      section(
+        "Finish your KILN account",
+        [
+          j.jsx("form", {
+            className: "mt-4 grid gap-3",
+            onSubmit: (e) => {
+              e.preventDefault();
+              void doOAuthComplete();
+            },
+            children: [
+              field("Handle", textInput({ value: pkOwner, onChange: (e) => setPkOwner(e.target.value.toLowerCase()), placeholder: "itsnotailabs", required: true })),
+              field("Display name", textInput({ value: pkName, onChange: (e) => setPkName(e.target.value), placeholder: "Your name or lab" })),
+              pkErr ? j.jsx("p", { className: "rounded-lg border border-border bg-bg px-3 py-2 text-sm text-red-500", children: pkErr }) : null,
+              j.jsx("button", { type: "submit", className: "btn-primary btn min-h-11", disabled: busy, children: busy ? "Working…" : "Create account & sign in" }),
+            ],
+          }),
+          j.jsx("button", {
+            type: "button",
+            className: "mt-3 text-sm text-seal hover:underline",
+            disabled: busy,
+            onClick: () => {
+              cancelOAuthSignup();
+              setPkErr("");
+            },
+            children: "Cancel — back to the sign-in doors",
+          }),
+        ],
+        "Your provider sign-in checked out — one last step: pick the handle your account, profile and repos will live under. The name can be your real name, a lab, or anything you ship as.",
+        "Almost there",
+      ),
+    );
+  } else if (!snap.session) {
     // ---- sign in
     children.push(
       section(
         "Sign in",
         [
+          j.jsxs("div", {
+            className: "mt-4 flex flex-col gap-2",
+            children: [
+              j.jsx("button", {
+                type: "button",
+                className: "btn min-h-11 w-full",
+                disabled: busy,
+                onClick: () => void doOAuthStart("google"),
+                children: "Continue with Google",
+              }),
+              j.jsx("button", {
+                type: "button",
+                className: "btn min-h-11 w-full",
+                disabled: busy,
+                onClick: () => void doOAuthStart("x"),
+                children: "Continue with X",
+              }),
+              oauthOff
+                ? j.jsx("p", { className: "rounded-lg border border-border bg-bg px-3 py-2 text-sm text-muted", children: oauthOff })
+                : null,
+              j.jsxs("div", {
+                className: "relative my-6",
+                children: [
+                  j.jsx("span", { className: "absolute inset-x-0 top-1/2 border-t border-border" }),
+                  j.jsx("span", {
+                    className: "relative mx-auto block w-fit bg-surface px-2 text-[11px] uppercase tracking-[0.16em] text-muted",
+                    children: "or email",
+                  }),
+                ],
+              }),
+            ],
+          }),
           j.jsx("form", {
             className: "mt-4 grid gap-3",
             onSubmit: (e) => {
@@ -1276,6 +1402,32 @@ export function KilnIdentityPanel() {
                 ? j.jsx("span", { className: "chip", children: "Not set — agent account: its token and its linked wallets are its doors" })
                 : j.jsx("span", { className: "chip text-seal", children: "Set — signs in" }),
             ],
+          }),
+          // Linked OAuth providers, read from the account record
+          // (oauthLinks). Read-only display: linking another provider
+          // while signed in is not a daemon door yet — the not-linked
+          // rows say so plainly instead of offering a dead button.
+          ...["google", "x"].map((provider) => {
+            const link = (Array.isArray(acct?.oauthLinks) ? acct.oauthLinks : []).find((l) => l && l.provider === provider);
+            const label = provider === "google" ? "Google" : "X";
+            return j.jsxs(
+              "div",
+              {
+                className: "mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm",
+                children: [
+                  j.jsx("span", { className: "font-medium", children: label }),
+                  link
+                    ? j.jsx("span", { className: "chip text-seal", children: "Linked — can sign in" })
+                    : j.jsx("span", { className: "chip", children: "Not linked" }),
+                  link && link.linkedAt
+                    ? j.jsx("span", { className: "text-muted", children: `Linked ${String(link.linkedAt).slice(0, 10)}` })
+                    : !link
+                      ? j.jsx("span", { className: "text-muted", children: "Sign in with it once from the login page and it links to the account it matches." })
+                      : null,
+                ],
+              },
+              `oauth-${provider}`,
+            );
           }),
           wallets.length
             ? j.jsx("ul", {
