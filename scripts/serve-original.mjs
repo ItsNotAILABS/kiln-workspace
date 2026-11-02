@@ -753,6 +753,59 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Paper-ID resolver proxy: /doi/<owner>/<slug>[/v/<n>] -> daemon
+  // http://127.0.0.1:18787/doi/<owner>/<slug>[/v/<n>] — the path passes
+  // through unchanged (unlike /papers, which maps onto /pages/auro/<repo>).
+  // The daemon answers 302 to the paper's Pages URL, so the Location
+  // header passes through alongside status, content type and body.
+  // GET/HEAD only.
+  if (pathname.startsWith("/doi/")) {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      send(res, 405, { "content-type": "text/plain; charset=utf-8" }, "method not allowed");
+      return;
+    }
+    const segments = pathname.slice("/doi/".length).split("/");
+    const segOk = (s) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(s);
+    const shapeOk =
+      (segments.length === 2 && segOk(segments[0]) && segOk(segments[1])) ||
+      (segments.length === 4 &&
+        segOk(segments[0]) &&
+        segOk(segments[1]) &&
+        segments[2] === "v" &&
+        /^\d+$/.test(segments[3]));
+    if (!shapeOk) {
+      send(res, 404, { "content-type": "text/plain; charset=utf-8" }, "not found");
+      return;
+    }
+    const target = `${pathname}${u.search || ""}`;
+    const headers = {};
+    if (req.headers.accept) headers.accept = req.headers.accept;
+    const upstream = http.request(
+      { host: "127.0.0.1", port: 18787, path: target, method: req.method, headers },
+      (up) => {
+        const parts = [];
+        up.on("data", (d) => parts.push(d));
+        up.on("end", () => {
+          const out = { "cache-control": "no-store" };
+          if (up.headers["content-type"]) out["content-type"] = up.headers["content-type"];
+          if (up.headers["content-length"]) out["content-length"] = up.headers["content-length"];
+          if (up.headers.location) out.location = up.headers.location;
+          send(res, up.statusCode || 502, out, Buffer.concat(parts));
+        });
+      },
+    );
+    upstream.on("error", (e) => {
+      send(
+        res,
+        502,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: `doi daemon unreachable: ${e.message}` }),
+      );
+    });
+    upstream.end();
+    return;
+  }
+
   // Forge API proxy: /api/forge/X -> daemon http://127.0.0.1:18787/X
   // The caller's Authorization header is forwarded verbatim; no token is
   // injected server-side — the daemon enforces accounts-only itself (401
