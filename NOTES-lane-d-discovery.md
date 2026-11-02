@@ -243,3 +243,11 @@ touched). Results:
   /v1/capabilities pointer; /api + /api/ 200 JSON, POST /api 405;
   /api/mcp GET 28 tools; initialize → kiln 2026.9 / 2024-11-05;
   / SPA shell, /_serverFn stub, missing-asset 404 all intact.
+- Deploy: version create from this clean worktree —
+  **Worker v48** `d2a6079c-1609-4ad5-8114-3de29e7e3258`; asset manifest
+  209 files (public/ grew past the stale "194" in the README since
+  Oct 29); exactly 2 files were new to the asset store (buckets [1,1])
+  = the two `public/.well-known/*.json`. Bindings verified on v48
+  BEFORE deployment: ASSETS (assets), KILN_SWARM_TOKEN (secret_text,
+  preserved), ORIGINAL_API_URL (plain_text, tunnel origin); named
+  handlers agentManifest/apiIndex/mcpManifest present in the script.
