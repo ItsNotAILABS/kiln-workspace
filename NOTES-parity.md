@@ -154,6 +154,18 @@ flagged below.
   README). Landing delta vs 60c0656 = exactly those 7 files — no
   OAuth/identity files touched.
 
+## LANDING — gates re-run on the merged tree (2026-11-02)
+
+- `node --check` OK on all 6 changed JS files.
+- Load-sim (parity branch's harness, ASSETS pointed at this tree;
+  output in this worktree's `.scratch/loadsim{1,2,3}.txt`):
+  RAN CLEAN ×3 — kiln-parity-core (exports ParityApiError, TOPIC_RE,
+  ciVerdict, createParityClient, invalidTopics, isNotYetActive,
+  parseTopics), kiln-workspaces (CiChip, KilnWorkspacesSurface),
+  kiln-create (KilnCreateSheet, openCreateSheet), _owner graph
+  (component), kiln-repo-meta (KilnRepoMetaBar), AppShell graph —
+  export sets identical to the parity branch's own gate run.
+
 ## Honest shortfalls
 - CI chip does NOT appear inside kiln-repos.js list rows (live-bugs
   lane owns that file; the task's preference was own-module rendering).
