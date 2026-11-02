@@ -34,6 +34,14 @@ several requests took >10 s):
     "capabilities":{"tools":{}},"serverInfo":{"name":"kiln",
     "version":"2026.9"}}}` — a correct, ingestible handshake; the
     server negotiates its own 2024-11-05, per spec.
+  - `POST https://kiln.pocketnova.app/api/mcp` initialize (public,
+    through the live Worker) → **200**, byte-identical handshake:
+    `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05",
+    "capabilities":{"tools":{}},"serverInfo":{"name":"kiln",
+    "version":"2026.9"}}}`. (The combined probe's `GET /api/mcp`
+    public leg never returned through the egress proxy; the tunnel
+    GET above + this POST + the local harness proxy GET below cover
+    the door.)
   So the MCP door itself is healthy at the origin. What an external
   runtime could NOT ingest was the discovery layer around it: no
   manifest anywhere points at `/api/mcp`, `/api` answered HTML/404,
