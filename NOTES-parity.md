@@ -139,6 +139,21 @@ flagged below.
 4. No daemon boot needed: workspaces + details routes are already
    LIVE on the running daemon (probed read-only 2026-11-02).
 
+## LANDING — in progress (2026-11-02, landing lane)
+
+- Clean landing worktree `~/workspace/.worktrees/kiln-parity-landing`
+  (branch `parity-landing`) off `improve/ws-system-ui` @ 60c0656
+  (Lane D landed, Worker v48). Main tree carries foreign WIP
+  (M ops-cloudflare/README.md, M public/kiln-account.json, ?? data/) —
+  deploy runs from this clean tree so none of it ships.
+- Cherry-picks, ZERO conflicts: b6a78f0→7231561 (notes),
+  b401c52→47d324c (G1), 5ba961f→ce896b2 (G18+G8).
+- Tree equivalence: batch files (NOTES-parity.md + the 6 JS assets)
+  byte-identical to parity tip 5ba961f; full diff vs parity tip is
+  only Lane D's files (worker, public/.well-known/*, its NOTES +
+  README). Landing delta vs 60c0656 = exactly those 7 files — no
+  OAuth/identity files touched.
+
 ## Honest shortfalls
 - CI chip does NOT appear inside kiln-repos.js list rows (live-bugs
   lane owns that file; the task's preference was own-module rendering).
