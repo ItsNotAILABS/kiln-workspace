@@ -223,3 +223,17 @@ touched). Results:
    be updated in the same commit that ships the proxy.
 3. Daemon capabilities stay bearer-gated by design — no change asked;
    the manifest points credentialed agents at them.
+
+## LANDING — in progress (2026-11-02, landing lane)
+
+- Cherry-picked onto `improve/ws-system-ui` @ 21a896c in clean worktree
+  `~/workspace/.worktrees/lane-d-landing` (main tree carries foreign WIP:
+  M ops-cloudflare/README.md, M public/kiln-account.json, ?? data/ —
+  deploy runs from this clean tree so none of it ships).
+  Landed SHAs: 81e33f2→2d656bd, 3980df8→7c87b2d, 65f2c2d→47fa2c8,
+  0aadab3→dad5e4c, 81b7fbb→5971db4. Zero conflicts.
+- NOTES-account-unify-app.md: untouched by the picks (diff vs 21a896c
+  empty) — main's newer version preserved.
+- Landed feature files tree-identical to lane-d branch (worker,
+  public/.well-known/*, NOTES, README +6).
+- `node --check ops-cloudflare/kiln-edge-worker.mjs` clean.
