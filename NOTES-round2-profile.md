@@ -22,7 +22,15 @@ NOT deployed — coordinator lands commits.
   address on title; step-1 wallet box p-3→p-4 + bg-bg framing; section subs gain leading-relaxed.
   NO handler/crypto/session/copy changes; kiln-identity-core.js untouched.
   Gates: node --check OK · class audit 66 tokens, none missing · load-sim RAN CLEAN (exports intact).
-- [ ] 3 Build: account chunk surgical pass
+- [x] 3 Build: account chunk surgical pass — DONE (all replacements count-asserted ==1, no new
+  bindings beyond in-scope u/r/t/i/e already used by the component's own JSX): signed-out frame
+  max-w-lg py-12 text-center → max-w-2xl py-10 text-left + title text-3xl→text-4xl (aligns with the
+  identity panel below it); signed-in gains an identity summary strip under the prose line
+  (truncated mono address with full address on title · Joined <profile.joined | wallet year> ·
+  "<balance> KLN balance" via the store's own toLocaleString format — all existing locals);
+  the bare form grid becomes a card (rounded-xl border bg-surface p-5, gap-3→gap-4); Save row
+  gains "View public profile" (existing Link + /$owner params pattern); invite card mt-10→mt-6.
+  Gates: node --check OK · class audit 56 tokens, none missing · load-sim RAN CLEAN.
 - [ ] 4 Build: _owner chunk surgical pass
 - [ ] 5 Gates: node --check, class audit, load-sim, cold renders desktop+375px, identity click-probe
 
