@@ -189,3 +189,14 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
   slice 3; panel carries the properly styled honest state.
 - The chunk's legacy better-auth EMAIL form is untouched (out of scope);
   the daemon doors are the panel's.
+
+## Addendum (later same run, load window opened briefly)
+- [x] Google preflight click probe — PASSED for BOTH buttons (stub
+      unconfigured): chunk button (first match) and panel button
+      (second match) each show "…isn't switched on yet" exactly once,
+      "Sign-in failed" absent, 0 pageerrors. This closes the slice-3
+      click gate that the earlier gates section marked not captured.
+- The pending-flow submit still wedges in-browser at the same place
+  (page.evaluate stops answering after the synthetic handle input is
+  set; the form, scrub and SET all proven) — the API-level proof
+  stands; flow.mjs remains the re-run path.
