@@ -163,7 +163,10 @@ async function forgeActivityBody() {
 // this surface cannot leak a private repo even if the code below has a bug.
 // As belt-and-braces, each repo's details must still say visibility:"public"
 // before the repo is included. Any failure answers 200 with an empty list:
-// this surface must never break the app that consumes it.
+// this surface must never break the app that consumes it. But a
+// failure-produced empty is marked degraded:true and never cached (see
+// publicAccountBody) — an unreachable forge and a truly empty account are
+// different facts, and only the second may be presented as one.
 // ---------------------------------------------------------------------------
 const PUBLIC_REPO_CAP = 40;
 const PUBLIC_COMMITS_LIMIT = 30;
@@ -178,8 +181,14 @@ const publicAccountCache = new Map();
 // calls can queue behind each other in the fetch connection pool — and an
 // abort timeout ticks while a request is still queued. This reader gets a
 // longer timeout than the forge-activity reader plus one retry, so queue
-// waits never masquerade as daemon failures.
-const PUBLIC_FETCH_TIMEOUT_MS = 8000;
+// waits never masquerade as daemon failures. The budget matches the
+// account-doc reader's 25 s: the daemon derives details live from git and
+// under this host's routine load a single repo's answer can take ~20 s —
+// at the old 8 s budget every repo in an account timed out, was retried,
+// timed out again, and was silently dropped, so a busy moment read as
+// "this account has no public repos" (reproduced cold through the live
+// domain: 200 in 21 s with repos: [] while four public repos exist).
+const PUBLIC_FETCH_TIMEOUT_MS = 25000;
 
 async function daemonAnonJson(pathname) {
   let lastErr;
@@ -359,6 +368,13 @@ async function computePublicRepo(owner, repo) {
   };
 }
 
+// Reports what actually happened, not just the survivors: how many repos
+// the anonymous listing named for this owner, and how many of those reads
+// failed. The caller needs the distinction — an account whose every repo
+// read failed is UNREACHABLE, not empty, and must never be cached or
+// presented as an account with no public repos. A repo whose details say
+// non-public resolves to null (not a failure): the listing names private
+// repos too, and the visibility gate is what keeps them out.
 async function computePublicAccount(owner) {
   const listed = await daemonAnonJson("/git");
   const repoList = Array.isArray(listed) ? listed : Array.isArray(listed?.repos) ? listed.repos : [];
@@ -367,6 +383,7 @@ async function computePublicAccount(owner) {
     .map((r) => r.repo)
     .slice(0, PUBLIC_REPO_CAP);
   const out = [];
+  let failures = 0;
   let idx = 0;
   const worker = async () => {
     while (idx < names.length) {
@@ -375,28 +392,65 @@ async function computePublicAccount(owner) {
         const rec = await computePublicRepo(owner, name);
         if (rec) out.push(rec);
       } catch {
-        /* one bad repo must not sink the account */
+        failures += 1;
+        /* one bad repo must not sink the account — but it is counted, so
+           an all-failed account is never mistaken for an empty one */
       }
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(4, names.length)) }, worker));
   out.sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
-  return out;
+  return { repos: out, failures, listed: names.length };
 }
 
+const publicAccountInFlight = new Map();
+
+// One deduped refresh per owner. Resolves to the fresh body, or null when
+// the read failed outright (listing unreachable, or every named repo's
+// read failed with nothing to show). A partial read (some repos landed)
+// still replaces the cache — those records are real — but is marked
+// incomplete so the next request revalidates instead of treating the
+// partial list as the whole truth for a full TTL.
+function refreshPublicAccount(owner) {
+  const running = publicAccountInFlight.get(owner);
+  if (running) return running;
+  const job = (async () => {
+    try {
+      const { repos, failures, listed } = await computePublicAccount(owner);
+      if (listed > 0 && repos.length === 0 && failures > 0) return null;
+      const body = JSON.stringify({ ok: true, owner, repos });
+      publicAccountCache.set(owner, { at: Date.now(), body, complete: failures === 0 });
+      return body;
+    } catch {
+      return null;
+    } finally {
+      publicAccountInFlight.delete(owner);
+    }
+  })();
+  publicAccountInFlight.set(owner, job);
+  return job;
+}
+
+// Stale-while-revalidate, the accountDocBody pattern: a public account's
+// full record set takes real time to compute against the daemon (tens of
+// seconds cold under load), so no phone should ever wait on a recompute
+// when a previous good answer exists. Fresh complete answers serve
+// directly; anything older (or partial) serves instantly while one
+// background refresh runs. A failure with nothing cached answers an
+// empty list marked degraded:true — and is NEVER cached, so the next
+// request retries the forge instead of serving the failure as truth for
+// a TTL (the old behavior: one wedged daemon moment blanked the public
+// list for every visitor, and the app's copy claimed it had read live).
 async function publicAccountBody(owner) {
-  const now = Date.now();
   const hit = publicAccountCache.get(owner);
-  if (hit && now - hit.at < 30000) return hit.body;
-  let repos = [];
-  try {
-    repos = await computePublicAccount(owner);
-  } catch {
-    repos = [];
+  if (hit && hit.body) {
+    if (hit.complete && Date.now() - hit.at < 30000) return hit.body;
+    void refreshPublicAccount(owner);
+    return hit.body;
   }
-  const body = JSON.stringify({ ok: true, owner, repos });
-  publicAccountCache.set(owner, { at: now, body });
-  return body;
+  const body = await refreshPublicAccount(owner);
+  if (body) return body;
+  return JSON.stringify({ ok: true, owner, repos: [], degraded: true });
 }
 
 async function publicCommitsBody(owner, repo) {
