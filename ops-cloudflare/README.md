@@ -15,6 +15,12 @@ How the domain is actually served (verified 2026-10-29):
   to kiln-original.service (:8931) on the home machine.
 - Missing `/assets/*` returns a real 404 (no SPA fallback) — so a missing
   asset file breaks the boot exactly like a missing import does.
+- Agent discovery (Lane D): the worker itself answers
+  `/.well-known/agent.json` and `/.well-known/mcp.json` (public manifests;
+  static copies also live in `public/.well-known/`) and returns a JSON
+  index for `/api` + `/api/`; `/api/mcp` stays proxied to the origin's
+  JSON-RPC handler (protocol 2024-11-05, initialize/tools/list need no
+  credential).
 - Bindings: `ASSETS` (assets), `ORIGINAL_API_URL` (plain text:
   https://kiln-original.medinatechlabs.net), `KILN_SWARM_TOKEN`
   (secret_text — preserved across deploys via `keep_bindings`, never
