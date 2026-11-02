@@ -179,6 +179,39 @@ flagged below.
   ORIGINAL_API_URL (plain_text →
   https://kiln-original.medinatechlabs.net) — BINDINGS_OK.
 
+## LANDING — DONE (2026-11-02, landing lane receipt)
+
+- **Branch landed**: `improve/ws-system-ui` fast-forwarded to this
+  landing tip (feature picks 7231561 / 47d324c / ce896b2 + landing
+  notes commits). Zero conflicts; no OAuth/identity files touched.
+- **Deployed**: Worker **v49** `05deb345-a035-43aa-88f3-9bbeeca25fc3`,
+  deployment `549acb94-6ce0-4fe4-8121-37fa123d98be` at **100%**
+  (deployments API confirms as latest, created
+  2026-11-02T08:31:52Z; previous was v48 deployment eb352e2d).
+  Bindings on v49 verified pre-deploy: ASSETS (assets),
+  KILN_SWARM_TOKEN (secret_text, preserved), ORIGINAL_API_URL
+  (plain_text → https://kiln-original.medinatechlabs.net).
+- **Asset manifest**: 212 files; exactly 6 assets new/changed to the
+  store = the 6 batch JS files.
+- **Served-bytes sha256 (live fetch == merged tree), all MATCH**:
+  - kiln-parity-core.js `72b21a61f8a4c691…f9482c5`
+  - kiln-workspaces.js `b75462490bee4789…436489`
+  - kiln-repo-meta.js `28da681835890d99…e83e91`
+  - kiln-create.js `69fac83ce063d747…83844f`
+  - _owner-B3Oc7_zJ.js `0aa22cb5c272cb58…66453`
+  - AppShell-H-m5HQPd.js `27f0a9d51ee636dd…27003`
+- **Public smoke**: `GET https://kiln.pocketnova.app/` → 200 HTML
+  SPA shell (1699 B); the 6 new/changed assets serve live (hashes
+  above). Full browser render on the live domain is sandbox-blocked —
+  NOT faked; render proof stands on the parity branch's staged-origin
+  renders over these same bytes.
+- **Foreign WIP preserved as found**: main tree still carries
+  M ops-cloudflare/README.md, M public/kiln-account.json, ?? data/.
+  Deploy ran from the clean landing worktree, so none of it shipped.
+- **No daemon action**: no swarm daemon or kiln-original restart —
+  workspaces + repo-details routes were already LIVE on the running
+  daemon (parity recon, read-only probes).
+
 ## Honest shortfalls
 - CI chip does NOT appear inside kiln-repos.js list rows (live-bugs
   lane owns that file; the task's preference was own-module rendering).
