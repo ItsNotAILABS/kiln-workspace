@@ -660,7 +660,7 @@ function CreatePaperPanel({ me, wallet }) {
       const name = form.slug.trim();
       await forge("POST", "/v1/repos", {
         owner,
-        name,
+        repo: name,
         description: manifest.title,
         visibility: "private",
       });
