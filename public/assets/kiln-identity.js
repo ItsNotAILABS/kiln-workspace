@@ -33,8 +33,30 @@ import {
   decryptSecretBackup,
   linkLocalWallet,
   linkPhantomWallet,
+  signInWithLocalWallet,
+  signInWithPhantomWallet,
+  signInWithPhantomSignature,
+  isNotYetActive,
+  utf8Bytes,
+  base58Decode,
+  bytesToHex,
   IdentityApiError,
 } from "./kiln-identity-core.js";
+import {
+  ulSession,
+  clearUlSession,
+  setUlPending,
+  peekUlPending,
+  takeUlPending,
+  setUlStatus,
+  takeUlStatus,
+  hasUlReturn,
+  parseUlReturn,
+  cleanUlReturnFromUrl,
+  ulConnectUrl,
+  ulSignMessageUrl,
+  openInPhantomAppUrl,
+} from "./kiln-phantom-ul.js";
 
 const R = reactNs(React(), 1);
 const j = jsxmod();
@@ -118,6 +140,8 @@ export async function refreshIdentity() {
       account: me.account,
       wallets: Array.isArray(me.wallets) ? me.wallets : [],
       hasWalletBackup: !!me.hasWalletBackup,
+      sponsor: me.sponsor || me.account?.sponsor || null,
+      sponsoredAgents: Array.isArray(me.sponsoredAgents) ? me.sponsoredAgents : [],
     };
     if (Array.isArray(me.wallets)) {
       walletSurface = true;
@@ -196,6 +220,177 @@ async function linkPhantom(address) {
     address,
     signMessage: (bytes) => p.signMessage(bytes, "utf8"),
   });
+}
+
+// ------------------------------------------------- wallet sign-in doors
+//
+// Every door opens the SAME account: password, an injected Phantom
+// signature, this browser's local key, or a Phantom universal-link
+// round trip. Verify answers with a normal session for the account
+// the wallet is linked to — persisted exactly like a password
+// sign-in, restored by the same refreshIdentity.
+
+async function completeWalletSession(res) {
+  saveSession({ token: res.sessionToken, expiresAt: res.expiresAt, account: res.account });
+  await refreshIdentity();
+  return res.account;
+}
+
+async function walletSignInInjected() {
+  const addr = await connectPhantom();
+  const res = await signInWithPhantomWallet(client, {
+    address: addr,
+    signMessage: (bytes) => phantomProvider().signMessage(bytes, "utf8"),
+  });
+  return completeWalletSession(res);
+}
+
+async function walletSignInLocal(wallet) {
+  const res = await signInWithLocalWallet(client, { address: wallet.address, secretHex: wallet.secret });
+  return completeWalletSession(res);
+}
+
+// ------------------------------------------- Phantom universal links
+//
+// Door 2 orchestration (transport + storage live in
+// kiln-phantom-ul.js). Starting a UL action navigates away to the
+// Phantom app; processUlReturn finishes it when Phantom redirects
+// back. Chained states ride the pending record: connect first, then
+// the challenge + signMessage trip, then verify/link here.
+
+const UL_SIGNUP_ADDR_KEY = "kiln.ul.signup-address.v1";
+
+function ulReturnUrl() {
+  return `${location.origin}${location.pathname}`;
+}
+
+async function startUlSignIn() {
+  const s = ulSession();
+  if (!s) {
+    setUlPending({ action: "signin-connect" });
+    location.href = await ulConnectUrl(ulReturnUrl());
+    return;
+  }
+  const ch = await client.walletChallenge({ address: s.pubkey });
+  setUlPending({ action: "signin-sign", challengeId: ch.challengeId, address: s.pubkey });
+  location.href = await ulSignMessageUrl(ulReturnUrl(), utf8Bytes(ch.message));
+}
+
+async function startUlLink() {
+  const s = ulSession();
+  if (!s) {
+    setUlPending({ action: "link-connect" });
+    location.href = await ulConnectUrl(ulReturnUrl());
+    return;
+  }
+  const ch = await client.challenge(s.pubkey);
+  setUlPending({ action: "link-sign", challengeId: ch.challengeId, address: s.pubkey });
+  location.href = await ulSignMessageUrl(ulReturnUrl(), utf8Bytes(ch.message));
+}
+
+async function startUlSignupConnect() {
+  setUlPending({ action: "signup-connect" });
+  location.href = await ulConnectUrl(ulReturnUrl());
+}
+
+let ulReturnRunning = false;
+export async function processUlReturn() {
+  if (ulReturnRunning) return;
+  let search = "";
+  try {
+    search = location.search || "";
+  } catch {
+    return;
+  }
+  if (!hasUlReturn(search)) return;
+  ulReturnRunning = true;
+  let pending = null;
+  try {
+    pending = peekUlPending();
+    const parsed = await parseUlReturn(search);
+    cleanUlReturnFromUrl();
+    if (!parsed) return;
+    if (parsed.kind === "error" || parsed.kind === "orphan") {
+      takeUlPending();
+      setUlStatus({ kind: "error", text: parsed.message });
+      emit();
+      return;
+    }
+    if (parsed.kind === "connect") {
+      if (pending?.action === "signup-connect") {
+        takeUlPending();
+        try {
+          localStorage.setItem(UL_SIGNUP_ADDR_KEY, parsed.address);
+        } catch {}
+        setUlStatus({
+          kind: "note",
+          text: `Phantom connected by app link: ${parsed.address} — finish creating your account below and this wallet links to it.`,
+        });
+        emit();
+        return;
+      }
+      if (pending?.action === "link-connect") {
+        const ch = await client.challenge(parsed.address);
+        setUlPending({ action: "link-sign", challengeId: ch.challengeId, address: parsed.address });
+        location.href = await ulSignMessageUrl(ulReturnUrl(), utf8Bytes(ch.message));
+        return;
+      }
+      // signin-connect (and any bare connect): chain into the sign trip.
+      const ch = await client.walletChallenge({ address: parsed.address });
+      setUlPending({ action: "signin-sign", challengeId: ch.challengeId, address: parsed.address });
+      location.href = await ulSignMessageUrl(ulReturnUrl(), utf8Bytes(ch.message));
+      return;
+    }
+    if (parsed.kind === "sign") {
+      takeUlPending();
+      if (!pending || (pending.action !== "signin-sign" && pending.action !== "link-sign")) {
+        setUlStatus({
+          kind: "error",
+          text: "Phantom returned a signature, but this browser has no sign-in or link in flight to finish — the trip that left isn't the one that came back. Start again from the wallet door.",
+        });
+        emit();
+        return;
+      }
+      if (pending.action === "link-sign") {
+        const pub = base58Decode(pending.address);
+        if (!pub || pub.length !== 32) throw new Error("The app-link address isn't a Solana public key");
+        await client.linkWallet({
+          address: pending.address,
+          kind: "phantom",
+          publicKeyHex: bytesToHex(pub),
+          challengeId: pending.challengeId,
+          signatureHex: bytesToHex(parsed.signature),
+        });
+        await refreshIdentity();
+        setUlStatus({ kind: "note", text: "Phantom linked by app link — it can sign in to this account from now on." });
+        emit();
+        return;
+      }
+      const res = await signInWithPhantomSignature(client, {
+        address: pending.address,
+        challenge: { challengeId: pending.challengeId },
+        signatureBytes: parsed.signature,
+      });
+      await completeWalletSession(res);
+      setUlStatus({ kind: "note", text: "Signed in with Phantom — your account and linked wallets are restored on this browser." });
+      emit();
+    }
+  } catch (e) {
+    takeUlPending();
+    if (isNotYetActive(e)) {
+      setUlStatus({
+        kind: "error",
+        text: "Wallet sign-in switches on with the next daemon update — the running forge doesn't answer that door yet. Sign in with your password; it opens the same account.",
+      });
+    } else if (e instanceof IdentityApiError && e.reason === "wallet_not_linked") {
+      setUlStatus({ kind: "unlinked", text: "", address: pending?.address || "" });
+    } else {
+      setUlStatus({ kind: "error", text: e instanceof Error ? e.message : "Phantom app-link sign-in failed" });
+    }
+    emit();
+  } finally {
+    ulReturnRunning = false;
+  }
 }
 
 // ------------------------------------------------- backup offer (on generate)
@@ -316,6 +511,9 @@ export function armIdentity() {
     if (session) void refreshIdentity();
   } catch {}
   try {
+    void processUlReturn();
+  } catch {}
+  try {
     const st = store.getState();
     if (typeof st.connect === "function" && !st.connect.__kilnIdentityWrapped) {
       const orig = st.connect;
@@ -342,6 +540,7 @@ globalThis.__KILN_IDENTITY = {
   getSnapshot: getIdentitySnapshot,
   refresh: refreshIdentity,
   signOut,
+  processUlReturn,
 };
 
 // ------------------------------------------------------------- the panel
@@ -380,6 +579,9 @@ export function KilnIdentityPanel() {
   const [restorePw, setRestorePw] = R.useState("");
   const [backupPw, setBackupPw] = R.useState("");
   const [importSecret, setImportSecret] = R.useState("");
+  // wallet sign-in doors
+  const [walletDoorOff, setWalletDoorOff] = R.useState(false);
+  const [unlinkedAddr, setUnlinkedAddr] = R.useState("");
 
   const wallet = store((s) => s.wallet);
 
@@ -387,6 +589,26 @@ export function KilnIdentityPanel() {
     const fn = () => setTick((t) => t + 1);
     listeners.add(fn);
     void refreshIdentity();
+    // Finish a Phantom universal-link trip that landed on this page,
+    // then surface its one-shot outcome (never silent, R27 lesson b).
+    void (async () => {
+      try {
+        await processUlReturn();
+      } catch {}
+      const st = takeUlStatus();
+      if (st) {
+        if (st.kind === "error") setErr(st.text);
+        else if (st.kind === "note") setNote(st.text);
+        else if (st.kind === "unlinked") setUnlinkedAddr(st.address || "that wallet");
+      }
+      try {
+        const addr = localStorage.getItem(UL_SIGNUP_ADDR_KEY);
+        if (addr) {
+          localStorage.removeItem(UL_SIGNUP_ADDR_KEY);
+          setPendingPhantom(addr);
+        }
+      } catch {}
+    })();
     return () => listeners.delete(fn);
   }, []);
 
@@ -398,6 +620,8 @@ export function KilnIdentityPanel() {
   const localLinked = !!(wallet && wallets.some((w) => w.address === wallet.address));
   const restoreCandidate = !!(linkedLocal && linkedLocal.hasBackup && (!wallet || wallet.address !== linkedLocal.address));
   const surfaceOff = snap.walletSurface === false;
+  const hasProvider = !!phantomProvider();
+  const ulSess = ulSession();
 
   const run = async (fn, okText) => {
     setBusy(true);
@@ -417,6 +641,91 @@ export function KilnIdentityPanel() {
     run(async () => {
       await signIn(email.trim(), password);
     }, "Signed in — your account and linked wallets are restored on this browser.");
+
+  // Wallet-door failures share one translation: a staged daemon turns
+  // the door "activating" (honest, steered to password); a validly
+  // signed but unlinked wallet opens the link-it guidance; anything
+  // else is the daemon's own words.
+  const walletDoorFail = (e, address) => {
+    if (isNotYetActive(e)) {
+      setWalletDoorOff(true);
+      setNote("Wallet sign-in switches on with the next daemon update. Sign in with your password — it opens the same account.");
+      return;
+    }
+    if (e instanceof IdentityApiError && e.reason === "wallet_not_linked") {
+      setUnlinkedAddr(address || "that wallet");
+      return;
+    }
+    setErr(e instanceof Error ? e.message : "Wallet sign-in failed");
+  };
+
+  const doWalletSignInPhantom = () =>
+    (async () => {
+      setBusy(true);
+      setErr("");
+      setNote("");
+      setUnlinkedAddr("");
+      let addr = "";
+      try {
+        addr = await connectPhantom();
+        const res = await signInWithPhantomWallet(client, {
+          address: addr,
+          signMessage: (bytes) => phantomProvider().signMessage(bytes, "utf8"),
+        });
+        await completeWalletSession(res);
+        setNote("Signed in with Phantom — your account and linked wallets are restored on this browser.");
+      } catch (e) {
+        walletDoorFail(e, addr);
+      } finally {
+        setBusy(false);
+      }
+    })();
+
+  const doWalletSignInLocal = () =>
+    (async () => {
+      setBusy(true);
+      setErr("");
+      setNote("");
+      setUnlinkedAddr("");
+      try {
+        if (!wallet) throw new Error("No wallet in this browser yet");
+        await walletSignInLocal(wallet);
+        setNote("Signed in with this device's wallet — your account and linked wallets are restored.");
+      } catch (e) {
+        walletDoorFail(e, wallet?.address || "");
+      } finally {
+        setBusy(false);
+      }
+    })();
+
+  const doUlSignIn = () =>
+    (async () => {
+      setBusy(true);
+      setErr("");
+      setNote("");
+      setUnlinkedAddr("");
+      try {
+        await startUlSignIn();
+        setNote("Opening Phantom… approve the sign-in there and you'll land back here, signed in.");
+      } catch (e) {
+        walletDoorFail(e, ulSession()?.pubkey || "");
+        setBusy(false);
+      }
+    })();
+
+  const doUlLink = () =>
+    (async () => {
+      setBusy(true);
+      setErr("");
+      setNote("");
+      try {
+        await startUlLink();
+        setNote("Opening Phantom… approve the link signature there and you'll land back here.");
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "Phantom app-link link failed");
+        setBusy(false);
+      }
+    })();
 
   const doGenerateForSignup = () =>
     run(async () => {
@@ -604,6 +913,132 @@ export function KilnIdentityPanel() {
         "Account",
       ),
     );
+    // ---- sign in with a wallet: the same account, another door
+    children.push(
+      section(
+        "Sign in with a wallet",
+        [
+          walletDoorOff
+            ? j.jsx("p", {
+                className: "mt-3 text-sm leading-relaxed text-muted",
+                children:
+                  "This door is built and wired, and it switches on with the next daemon update — the running forge doesn't answer wallet sign-in yet. Sign in with your password above; it opens the same account, and every wallet linked to it will sign in here once the update lands.",
+              })
+            : null,
+          unlinkedAddr
+            ? j.jsxs("div", {
+                className: "mt-3 rounded-lg border border-border bg-bg p-4",
+                children: [
+                  j.jsx("p", {
+                    className: "text-sm leading-relaxed",
+                    children: `Wallet ${shortAddr(unlinkedAddr)} signed the challenge — and it isn't linked to an account yet, so there is no account for it to open. Two ways in:`,
+                  }),
+                  j.jsx("p", {
+                    className: "mt-2 text-sm leading-relaxed text-muted",
+                    children:
+                      "Sign in with your password above, once — then link this wallet under Sign-in & wallets, and it signs in by itself from then on. Or create the account with this wallet in the form below.",
+                  }),
+                  j.jsx("button", {
+                    type: "button",
+                    className: "btn mt-3 min-h-11",
+                    disabled: busy,
+                    onClick: () => {
+                      setPendingPhantom(unlinkedAddr.startsWith("0x") ? "" : unlinkedAddr);
+                      setNote(
+                        unlinkedAddr.startsWith("0x")
+                          ? "That is this device's wallet — generate or restore it in step 1 of the create form below, then create the account and it links."
+                          : "Phantom is set as the new account's wallet in the create form below — finish it and the wallet is linked from the start.",
+                      );
+                    },
+                    children: "Create the account with this wallet",
+                  }),
+                ],
+              })
+            : null,
+          j.jsxs("div", {
+            className: "mt-4 flex flex-col gap-2 sm:flex-row",
+            children: [
+              hasProvider
+                ? j.jsx("button", {
+                    type: "button",
+                    className: "btn-primary btn flex-1 min-h-11",
+                    disabled: busy || walletDoorOff,
+                    onClick: () => void doWalletSignInPhantom(),
+                    children: "Sign in with Phantom",
+                  })
+                : j.jsx("a", {
+                    href: openInPhantomAppUrl(location.href, location.origin),
+                    className: "btn-primary btn flex-1 min-h-11",
+                    children: "Open in Phantom app",
+                  }),
+              wallet
+                ? j.jsx("button", {
+                    type: "button",
+                    className: "btn flex-1 min-h-11",
+                    disabled: busy || walletDoorOff,
+                    onClick: () => void doWalletSignInLocal(),
+                    children: `Sign in with this device's wallet (${shortAddr(wallet.address)})`,
+                  })
+                : null,
+            ],
+          }),
+          !hasProvider
+            ? j.jsxs("div", {
+                className: "mt-2 flex flex-col gap-2",
+                children: [
+                  j.jsx("p", {
+                    className: "text-xs leading-relaxed text-muted",
+                    children:
+                      "This browser has no Phantom provider — on a phone that's normal: the provider lives inside Phantom's own browser. Door 1 opens this page there and the session lives in that browser. Door 2 signs through the Phantom app by universal link and lands back here:",
+                  }),
+                  j.jsx("button", {
+                    type: "button",
+                    className: "btn min-h-11",
+                    disabled: busy || walletDoorOff,
+                    onClick: () => void doUlSignIn(),
+                    children: ulSess ? `Sign in via Phantom app link (${shortAddr(ulSess.pubkey)})` : "Sign in via Phantom app link",
+                  }),
+                ],
+              })
+            : ulSess
+              ? j.jsx("button", {
+                  type: "button",
+                  className: "btn mt-2 min-h-11",
+                  disabled: busy || walletDoorOff,
+                  onClick: () => void doUlSignIn(),
+                  children: `Sign in via Phantom app link (${shortAddr(ulSess.pubkey)})`,
+                })
+              : null,
+          !wallet && !hasProvider
+            ? null
+            : !wallet
+              ? j.jsx("p", {
+                  className: "mt-2 text-xs leading-relaxed text-muted",
+                  children: "No wallet key in this browser yet — the device-wallet door appears once one is generated or restored here.",
+                })
+              : null,
+          ulSess
+            ? j.jsxs("p", {
+                className: "mt-3 flex flex-wrap items-center gap-2 text-xs text-muted",
+                children: [
+                  j.jsx("span", { className: "chip text-seal", children: `App link connected · ${shortAddr(ulSess.pubkey)}` }),
+                  j.jsx("button", {
+                    type: "button",
+                    className: "btn h-8 px-3",
+                    onClick: () => {
+                      clearUlSession();
+                      setTick((t) => t + 1);
+                    },
+                    children: "Disconnect app link",
+                  }),
+                ],
+              })
+            : null,
+        ],
+        "Every door opens the same account. A wallet signs a one-time challenge and the forge answers with the account that wallet is linked to — no separate wallet account, no new identity.",
+        "Wallet door",
+      ),
+    );
     // ---- create account, wallet first
     children.push(
       section(
@@ -622,13 +1057,43 @@ export function KilnIdentityPanel() {
                     className: "mt-2 flex flex-col gap-2 sm:flex-row",
                     children: [
                       j.jsx("button", { type: "button", className: "btn flex-1 min-h-11", disabled: busy, onClick: () => void doGenerateForSignup(), children: "Generate wallet" }),
-                      j.jsx("button", {
-                        type: "button",
-                        className: "btn flex-1 min-h-11",
-                        disabled: busy,
-                        onClick: () => void doConnectPhantomForSignup(),
-                        children: pendingPhantom ? `Phantom: ${shortAddr(pendingPhantom)}` : "Connect Phantom",
-                      }),
+                      hasProvider
+                        ? j.jsx("button", {
+                            type: "button",
+                            className: "btn flex-1 min-h-11",
+                            disabled: busy,
+                            onClick: () => void doConnectPhantomForSignup(),
+                            children: pendingPhantom ? `Phantom: ${shortAddr(pendingPhantom)}` : "Connect Phantom",
+                          })
+                        : j.jsx("a", {
+                            href: openInPhantomAppUrl(location.href, location.origin),
+                            className: "btn flex-1 min-h-11",
+                            children: pendingPhantom ? `Phantom: ${shortAddr(pendingPhantom)}` : "Open in Phantom app",
+                          }),
+                      !hasProvider && !pendingPhantom
+                        ? j.jsx("button", {
+                            type: "button",
+                            className: "btn flex-1 min-h-11",
+                            disabled: busy,
+                            onClick: () => {
+                              if (ulSess) {
+                                setPendingPhantom(ulSess.pubkey);
+                                return;
+                              }
+                              void (async () => {
+                                setBusy(true);
+                                setErr("");
+                                try {
+                                  await startUlSignupConnect();
+                                } catch (e) {
+                                  setErr(e instanceof Error ? e.message : "Phantom app-link connect failed");
+                                  setBusy(false);
+                                }
+                              })();
+                            },
+                            children: ulSess ? `App-link Phantom: ${shortAddr(ulSess.pubkey)}` : "Connect Phantom via app link",
+                          })
+                        : null,
                     ],
                   }),
               pendingPhantom && wallet
@@ -693,11 +1158,21 @@ export function KilnIdentityPanel() {
       );
     }
 
-    // ---- linked wallets
+    // ---- sign-in & wallets: every door into this account, visible
     children.push(
       section(
-        "Linked wallets",
+        "Sign-in & wallets",
         [
+          j.jsxs("div", {
+            className: "mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-3 text-sm",
+            children: [
+              j.jsx("span", { className: "font-medium", children: "Password" }),
+              acct?.email ? j.jsx("span", { className: "text-muted", children: acct.email }) : null,
+              acct?.kind === "agent"
+                ? j.jsx("span", { className: "chip", children: "Not set — agent account: its token and its linked wallets are its doors" })
+                : j.jsx("span", { className: "chip text-seal", children: "Set — signs in" }),
+            ],
+          }),
           wallets.length
             ? j.jsx("ul", {
                 className: "mt-3 divide-y divide-border rounded-lg border border-border",
@@ -709,6 +1184,7 @@ export function KilnIdentityPanel() {
                       children: [
                         j.jsx("span", { className: "font-mono", title: w.address, children: shortAddr(w.address) }),
                         j.jsx("span", { className: "chip", children: w.kind === "phantom" ? "Phantom" : "This app's key" }),
+                        j.jsx("span", { className: "chip text-seal", children: "Can sign in" }),
                         w.hasBackup ? j.jsx("span", { className: "chip text-seal", children: "Backup on file" }) : null,
                         wallet && wallet.address === w.address ? j.jsx("span", { className: "chip", children: "In this browser" }) : null,
                         j.jsx("span", { className: "flex-1" }),
@@ -746,27 +1222,59 @@ export function KilnIdentityPanel() {
                     children: `Link this browser's wallet (${shortAddr(wallet.address)})`,
                   })
                 : null,
-              j.jsx("button", {
-                type: "button",
-                className: "btn flex-1 min-h-11",
-                disabled: busy || surfaceOff,
-                onClick: () =>
-                  void run(async () => {
-                    const addr = pendingPhantom || (await connectPhantom());
-                    await linkPhantom(addr);
-                    setPendingPhantom("");
-                    await refreshIdentity();
-                  }, "Phantom linked as a second wallet on this account."),
-                children: "Link Phantom",
-              }),
+              hasProvider
+                ? j.jsx("button", {
+                    type: "button",
+                    className: "btn flex-1 min-h-11",
+                    disabled: busy || surfaceOff,
+                    onClick: () =>
+                      void run(async () => {
+                        const addr = pendingPhantom || (await connectPhantom());
+                        await linkPhantom(addr);
+                        setPendingPhantom("");
+                        await refreshIdentity();
+                      }, "Phantom linked as a second wallet on this account."),
+                    children: "Link Phantom",
+                  })
+                : j.jsx("a", {
+                    href: openInPhantomAppUrl(location.href, location.origin),
+                    className: "btn flex-1 min-h-11",
+                    children: "Open in Phantom app to link",
+                  }),
+              !hasProvider
+                ? j.jsx("button", {
+                    type: "button",
+                    className: "btn flex-1 min-h-11",
+                    disabled: busy || surfaceOff,
+                    onClick: () => void doUlLink(),
+                    children: ulSess ? `Link Phantom via app link (${shortAddr(ulSess.pubkey)})` : "Link Phantom via app link",
+                  })
+                : null,
             ],
           }),
+          ulSess
+            ? j.jsxs("p", {
+                className: "mt-3 flex flex-wrap items-center gap-2 text-xs text-muted",
+                children: [
+                  j.jsx("span", { className: "chip text-seal", children: `App link connected · ${shortAddr(ulSess.pubkey)}` }),
+                  j.jsx("button", {
+                    type: "button",
+                    className: "btn h-8 px-3",
+                    onClick: () => {
+                      clearUlSession();
+                      setTick((t) => t + 1);
+                    },
+                    children: "Disconnect app link",
+                  }),
+                ],
+              })
+            : null,
           j.jsx("p", {
             className: "mt-3 text-xs leading-relaxed text-muted",
             children: "An address links to exactly one account. If Phantom says the address belongs elsewhere, it is already linked to another Kiln account — unlink it there first.",
           }),
         ],
-        "Wallets proven by signature, not by assertion. Phantom signs a one-time challenge; this browser's key signs locally.",
+        "Every door into this one account, with its state. Wallets are proven by signature, not by assertion — Phantom signs a one-time challenge, this browser's key signs locally — and every linked wallet can also sign in, from the wallet door on the login page. On a phone with no Phantom provider, Open in Phantom app leads; the app-link door signs through Phantom and lands back here.",
         "Signature-linked",
       ),
     );
