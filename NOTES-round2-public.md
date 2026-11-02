@@ -1,7 +1,8 @@
 # Round 2 — Piece 1: "Nothing shows public" (/repos All repos)
 
 Branch: round2-public (off improve/ws-system-ui @ ee78c97)
-Status: ROOT CAUSE PROVEN (bug reproduced cold through the live domain) — FIXING
+Status: FIXED + VERIFIED (see Verification log; live proof waits on landing +
+the kiln-original.service restart, per Activation flags)
 
 ## Bug
 Signed out, phone, /repos → "All repos": "Reading the forge…" then
@@ -139,6 +140,14 @@ auro/kiln-agent-kit, auro/defi-kit, auro/blockchain-kit, auro/marketplace-paper.
   state), the other rows rendered.
 - Load sims (design-round loadsim.mjs): kiln-repos.js + kiln-public.js
   **RAN CLEAN** after edits, again after the partial-flag edits.
+- Final-code addendum: the desktop probe above ran the final hub code
+  (incl. partial tracking); both edited modules re-ran the load sim
+  CLEAN at final state; the origin's post-probe changes (no-downgrade
+  guard, startup warm) are cache/startup logic, syntax-checked. A last
+  warm attempt on the final instance met a load **54/87/80** window —
+  far beyond the box's usual 10–40 — and degraded honestly (uncached);
+  no fake data at any point. Scratch instance on :8939 stopped after
+  testing; nothing left running.
 - Honest limit: daemon latency in the worst windows (load 40+) exceeds
   even the 25 s×2 per-call budget for the heavy per-repo compute
   (details + commits + full tree + up to 41 file contents per repo). In
