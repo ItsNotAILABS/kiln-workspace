@@ -819,6 +819,56 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // General KILN Pages proxy (G17): /pages/<owner>/<repo>/... -> daemon
+  // http://127.0.0.1:18787/pages/<owner>/<repo>/... — any pages-designated
+  // repo, any owner (the /papers route above stays as the auro paper
+  // shortcut). The daemon enforces the visibility law itself: public ->
+  // anonymous 200; private -> anon 401 / non-owner 403; not designated ->
+  // 404. Status, content type and body pass through faithfully; no
+  // credential is injected here. GET/HEAD only.
+  if (pathname.startsWith("/pages/")) {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      send(res, 405, { "content-type": "text/plain; charset=utf-8" }, "method not allowed");
+      return;
+    }
+    const rest = pathname.slice("/pages/".length);
+    const parts = rest.split("/");
+    const segOk = (x) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(x);
+    if (parts.length < 2 || !segOk(parts[0]) || !segOk(parts[1])) {
+      send(res, 404, { "content-type": "text/plain; charset=utf-8" }, "not found");
+      return;
+    }
+    const target = `${pathname}${u.search || ""}`;
+    const headers = {};
+    if (req.headers.accept) headers.accept = req.headers.accept;
+    if (req.headers.authorization) headers.authorization = req.headers.authorization;
+    if (req.headers.cookie) headers.cookie = req.headers.cookie;
+    const upstream = http.request(
+      { host: "127.0.0.1", port: 18787, path: target, method: req.method, headers },
+      (up) => {
+        const chunks = [];
+        up.on("data", (d) => chunks.push(d));
+        up.on("end", () => {
+          const out = { "cache-control": "no-store" };
+          if (up.headers["content-type"]) out["content-type"] = up.headers["content-type"];
+          if (up.headers["content-length"]) out["content-length"] = up.headers["content-length"];
+          if (up.headers.location) out.location = up.headers.location;
+          send(res, up.statusCode || 502, out, Buffer.concat(chunks));
+        });
+      },
+    );
+    upstream.on("error", (e) => {
+      send(
+        res,
+        502,
+        { "content-type": "application/json; charset=utf-8" },
+        JSON.stringify({ ok: false, error: `pages daemon unreachable: ${e.message}` }),
+      );
+    });
+    upstream.end();
+    return;
+  }
+
   // Paper-ID resolver proxy: /doi/<owner>/<slug>[/v/<n>] -> daemon
   // http://127.0.0.1:18787/doi/<owner>/<slug>[/v/<n>] — the path passes
   // through unchanged (unlike /papers, which maps onto /pages/auro/<repo>).
