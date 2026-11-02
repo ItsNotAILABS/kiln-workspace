@@ -336,12 +336,46 @@ export async function mergePublicAccount(owner, recs) {
 
 // --- API ---------------------------------------------------------------------
 
+// A cold public read crosses the tunnel to an origin that computes the
+// account against the daemon live — tens of seconds in bad windows. The
+// fetch gets a generous but finite budget: past it the caller must hear
+// "did not answer", never hang on a spinner forever and never mistake a
+// dead read for an empty account.
+function publicFetchSignal() {
+  try {
+    return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(60000)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function lookupPublicAccount(rawOwner) {
   const owner = normalizeHandle(rawOwner);
   if (!HANDLE_RE.test(owner)) return { ok: false, owner, repos: [], error: "That doesn't look like an account handle." };
-  const res = await fetch(`/api/kiln/public/accounts/${encodeURIComponent(owner)}/repos`, { cache: "no-store" });
+  let res;
+  try {
+    res = await fetch(`/api/kiln/public/accounts/${encodeURIComponent(owner)}/repos`, {
+      cache: "no-store",
+      signal: publicFetchSignal(),
+    });
+  } catch {
+    return { ok: false, owner, repos: [], error: "The forge's public surface did not answer." };
+  }
+  // The origin answers failures as 200-with-empty BY DESIGN so the app
+  // never breaks on them — but an HTTP error, an unparseable body (a
+  // proxy error page), or the origin's degraded marker all mean the
+  // forge did not actually answer. Reporting those as a successful
+  // empty account is how a wedged daemon moment turned into "this
+  // account has no public repositories" on screen.
+  if (!res.ok) return { ok: false, owner, repos: [], error: "The forge's public surface did not answer." };
   const data = await res.json().catch(() => null);
-  const repos = Array.isArray(data?.repos) ? data.repos : [];
+  if (!data || !Array.isArray(data.repos))
+    return { ok: false, owner, repos: [], error: "The forge's public surface did not answer." };
+  if (data.degraded)
+    return { ok: false, owner, repos: [], degraded: true, error: "The forge's public surface did not answer." };
+  const repos = data.repos;
   const canonical = data?.owner || owner;
   await mergePublicAccount(canonical, repos);
   return { ok: true, owner: canonical, repos };
@@ -350,8 +384,15 @@ export async function lookupPublicAccount(rawOwner) {
 export async function searchPublic(rawQuery) {
   const q = String(rawQuery || "").trim().toLowerCase();
   if (q.length < 2) return { accounts: [], repos: [] };
-  const res = await fetch(`/api/kiln/public/search?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+  const res = await fetch(`/api/kiln/public/search?q=${encodeURIComponent(q)}`, {
+    cache: "no-store",
+    signal: publicFetchSignal(),
+  });
+  // Same honesty rule as the account lookup: a failed or degraded read
+  // throws, so callers show "did not answer" instead of "no matches".
+  if (!res.ok) throw new Error("The forge's public search did not answer.");
   const data = await res.json().catch(() => null);
+  if (!data || data.degraded) throw new Error("The forge's public search did not answer.");
   const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
   const repos = Array.isArray(data?.repos) ? data.repos : [];
   // Merge the full public record of every owner the search touched, so the
