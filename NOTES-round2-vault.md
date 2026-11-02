@@ -99,8 +99,8 @@ improve/ws-system-ui @ ee78c97. NO deploy, main tree untouched; coordinator land
 
 ## Steps
 - [x] 0 Inventory + this file
-- [ ] 1 Cherry-pick receipt wiring af8f0bd
-- [ ] 2 kiln-vault.js + wallet delegate shim
+- [x] 1 Cherry-pick receipt wiring af8f0bd — landed as 0e16642, clean (wallet file identical between divergence 9c9f413 and base ee78c97)
+- [x] 2 kiln-vault.js + wallet delegate shim — node --check OK, load sim RAN CLEAN, class audit 75 tokens missing none (grid-cols-3/pt-3 are absent from compiled CSS — original chunk used them dead; vault uses sm:grid-cols-3 + inline padding instead)
 - [ ] 3 Renames (AppShell ×2, kiln-repos ×1)
 - [ ] 4 Gates: node --check, class audit, load sim, cold renders /wallet +
   / desktop + 375px 0 pageerrors, seeded click probes (Details, transfers,
