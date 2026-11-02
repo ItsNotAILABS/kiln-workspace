@@ -220,6 +220,7 @@ function WalletDetails({ state, address, balance }) {
                 className: "w-28",
                 children: j.jsx("input", {
                   className: "input",
+                  style: { fontSize: "16px" },
                   ref: amountRef,
                   defaultValue: "",
                   placeholder: "Amount",
@@ -389,6 +390,7 @@ function AgentLedger({ state }) {
       j.jsx("input", {
         key: "q",
         className: "input mt-3 w-full",
+        style: { fontSize: "16px" },
         defaultValue: "",
         onChange: (e) => {
           setQuery(e.target.value);
@@ -654,6 +656,7 @@ export function KilnVault() {
                   j.jsx("input", {
                     key: "in",
                     className: "input flex-1",
+                    style: { fontSize: "16px" },
                     ref: githubRef,
                     defaultValue: state.wallet?.githubHandle ?? "",
                     placeholder: "GitHub username",
@@ -764,6 +767,7 @@ export function KilnVault() {
       j.jsx("input", {
         key: "search",
         className: "input mt-3 w-full",
+        style: { fontSize: "16px" },
         defaultValue: "",
         onChange: (e) => setSearch(e.target.value),
         placeholder: "Search wallets — name, role, tree, model, or address",

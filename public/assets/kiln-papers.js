@@ -713,6 +713,7 @@ function CreatePaperPanel({ me, wallet }) {
         j.jsx("input", {
           key: "i",
           className: "input mt-1",
+          style: { fontSize: "16px" },
           defaultValue: formRef.current[key],
           onChange: set(key),
           ...props,
@@ -749,6 +750,7 @@ function CreatePaperPanel({ me, wallet }) {
           j.jsx("span", { className: "text-xs font-medium text-muted", children: "Authors (one per line)" }),
           j.jsx("textarea", {
             className: "input mt-1",
+            style: { fontSize: "16px" },
             rows: 3,
             defaultValue: formRef.current.authors,
             onChange: set("authors"),
@@ -762,6 +764,7 @@ function CreatePaperPanel({ me, wallet }) {
           j.jsx("span", { className: "text-xs font-medium text-muted", children: "Abstract" }),
           j.jsx("textarea", {
             className: "input mt-1",
+            style: { fontSize: "16px" },
             rows: 4,
             defaultValue: formRef.current.abstract,
             onChange: set("abstract"),
@@ -942,7 +945,7 @@ function ReleasePanel({ repos, selected, onSelect, me, registry }) {
                       j.jsx("input", {
                         key: "tag",
                         className: "input",
-                        style: { maxWidth: "10rem" },
+                        style: { maxWidth: "10rem", fontSize: "16px" },
                         placeholder: "v1.0.0",
                         ref: tagRef,
                         defaultValue: "",

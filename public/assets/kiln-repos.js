@@ -331,7 +331,7 @@ function Explorer({ candidates, initial }) {
           j.jsx("input", {
             key: "manual",
             className: "input",
-            style: { maxWidth: "14rem" },
+            style: { maxWidth: "14rem", fontSize: "16px" },
             placeholder: "owner/name",
             ref: manualRef,
             defaultValue: "",
@@ -743,7 +743,7 @@ export function KilnReposHub() {
                   j.jsx("input", {
                     key: "q",
                     className: "input",
-                    style: { maxWidth: "22rem" },
+                    style: { maxWidth: "22rem", fontSize: "16px" },
                     placeholder: "Search public repositories…",
                     ref: queryRef,
                     defaultValue: "",

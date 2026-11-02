@@ -483,6 +483,7 @@ export function KilnAccountLookup() {
         children: [
           j.jsx("input", {
             className: "input flex-1",
+            style: { fontSize: "16px" },
             ref: inputRef,
             defaultValue: "",
             type: "text",
