@@ -1117,4 +1117,12 @@ server.listen(PORT, "0.0.0.0", () => {
   // Warm the forge account doc in the background so the first Studio boot
   // usually answers with the live doc already built.
   accountDocBody().catch(() => {});
+  // Warm the public account cache for the discovery seed accounts (the
+  // /repos hub's seeds) in the background too: a cold public compute
+  // takes tens of seconds against the daemon, and the first signed-out
+  // visitor after a restart should meet the SWR cache, not the compute.
+  // Failures warm nothing — the cache only ever holds real answers.
+  for (const owner of ["auro", "itsnotailabs"]) {
+    refreshPublicAccount(owner).catch(() => {});
+  }
 });
