@@ -141,7 +141,11 @@ function TxReceiptRow({ tx }) {
  */
 function WalletDetails({ state, address, balance }) {
   const [dir, setDir] = R.useState(null);
-  const [amount, setAmount] = R.useState("");
+  // The amount field is UNCONTROLLED (ref, read at Confirm time), same
+  // pattern as the Explore Discover lookup (v37): the Vault re-renders
+  // on every store republish (balances, chain ticks), and a controlled
+  // field under that render pressure eats keystrokes on a phone.
+  const amountRef = R.useRef(null);
   const transfer = globalThis.__KILN_TRANSFER;
   const main = state.wallet;
   const rows = txsFor(allTxsOf(state), address).slice(0, 20);
@@ -185,7 +189,7 @@ function WalletDetails({ state, address, balance }) {
                 : "Transfers unavailable — forge companion not loaded",
             onClick: () => {
               setDir("fund");
-              setAmount("");
+              if (amountRef.current) amountRef.current.value = "";
             },
             children: "Fund from main",
           }),
@@ -200,7 +204,7 @@ function WalletDetails({ state, address, balance }) {
                 : "Transfers unavailable — forge companion not loaded",
             onClick: () => {
               setDir("sweep");
-              setAmount("");
+              if (amountRef.current) amountRef.current.value = "";
             },
             children: "Sweep to main",
           }),
@@ -216,8 +220,8 @@ function WalletDetails({ state, address, balance }) {
                 className: "w-28",
                 children: j.jsx("input", {
                   className: "input",
-                  value: amount,
-                  onChange: (e) => setAmount(e.target.value),
+                  ref: amountRef,
+                  defaultValue: "",
                   placeholder: "Amount",
                   inputMode: "decimal",
                 }),
@@ -227,7 +231,7 @@ function WalletDetails({ state, address, balance }) {
                 type: "button",
                 className: "btn-primary btn h-7 px-2 text-xs",
                 onClick: () => {
-                  const amt = Number(amount);
+                  const amt = Number(amountRef.current?.value ?? "");
                   const avail = dir === "fund" ? (state.balance ?? 0) : balance;
                   if (!Number.isFinite(amt) || amt <= 0) {
                     toast("Enter an amount more than 0 KLN");
@@ -379,10 +383,13 @@ function AgentLedger({ state }) {
           })
         ),
       }),
+      // UNCONTROLLED live filter (v37 pattern): the state below drives
+      // the LIST only; the field's own text belongs to the DOM, so the
+      // Vault's store-driven re-renders can never rewrite it mid-type.
       j.jsx("input", {
         key: "q",
         className: "input mt-3 w-full",
-        value: query,
+        defaultValue: "",
         onChange: (e) => {
           setQuery(e.target.value);
           setLimit(25);
@@ -463,7 +470,10 @@ export function KilnVault() {
   const state = useStore();
   const [showSecret, setShowSecret] = R.useState(false);
   const [showSwitch, setShowSwitch] = R.useState(false);
-  const [github, setGithub] = R.useState(state.wallet?.githubHandle ?? "");
+  // GitHub handle field is UNCONTROLLED (ref, read at submit; v37
+  // pattern) — defaultValue carries the same mount-time initial value
+  // the state version used.
+  const githubRef = R.useRef(null);
   const [search, setSearch] = R.useState("");
   const [openId, setOpenId] = R.useState(null);
 
@@ -637,15 +647,15 @@ export function KilnVault() {
                 className: "mt-4 flex flex-col gap-2 sm:flex-row",
                 onSubmit: (e) => {
                   e.preventDefault();
-                  state.linkGithub(github);
+                  state.linkGithub(githubRef.current?.value ?? "");
                   toast("GitHub handle linked");
                 },
                 children: [
                   j.jsx("input", {
                     key: "in",
                     className: "input flex-1",
-                    value: github,
-                    onChange: (e) => setGithub(e.target.value),
+                    ref: githubRef,
+                    defaultValue: state.wallet?.githubHandle ?? "",
                     placeholder: "GitHub username",
                   }),
                   j.jsx("button", {
@@ -749,10 +759,12 @@ export function KilnVault() {
         children:
           "One per agent on a tree. Seeded 25 KLN to do the work: commits, residencies, bounties.",
       }),
+      // UNCONTROLLED live filter (v37 pattern): state drives the list,
+      // the DOM owns the field text.
       j.jsx("input", {
         key: "search",
         className: "input mt-3 w-full",
-        value: search,
+        defaultValue: "",
         onChange: (e) => setSearch(e.target.value),
         placeholder: "Search wallets — name, role, tree, model, or address",
       }),

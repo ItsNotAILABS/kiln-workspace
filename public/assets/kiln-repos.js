@@ -203,7 +203,12 @@ function nodeAt(root, segs) {
 
 function Explorer({ candidates, initial }) {
   const [pick, setPick] = R.useState(initial || null); // {owner, name, record?}
-  const [manual, setManual] = R.useState("");
+  // The owner/name field is UNCONTROLLED (ref, read at Browse time),
+  // same pattern as the Explore Discover lookup (v37): this component
+  // re-renders as explorer data lands, and a controlled field can have
+  // its value rewritten mid-composition on a phone keyboard, eating
+  // keystrokes. The DOM owns the text; no render can reset it.
+  const manualRef = R.useRef(null);
   const [segs, setSegs] = R.useState([]);
   const [file, setFile] = R.useState(null); // {path, content|null, note}
   const [sessTree, setSessTree] = R.useState(null); // {key, entries} for session browsing
@@ -328,8 +333,11 @@ function Explorer({ candidates, initial }) {
             className: "input",
             style: { maxWidth: "14rem" },
             placeholder: "owner/name",
-            value: manual,
-            onChange: (e) => setManual(e.target.value),
+            ref: manualRef,
+            defaultValue: "",
+            type: "text",
+            autoComplete: "off",
+            spellCheck: false,
             autoCapitalize: "none",
             autoCorrect: "off",
           }),
@@ -338,7 +346,7 @@ function Explorer({ candidates, initial }) {
             type: "button",
             className: "btn h-8",
             onClick: () => {
-              const m = manual.trim().match(/^([\w.-]+)\/([\w.-]+)$/);
+              const m = (manualRef.current?.value ?? "").trim().match(/^([\w.-]+)\/([\w.-]+)$/);
               if (m) choose({ owner: m[1], name: m[2], record: null });
             },
             children: "Browse",
@@ -508,7 +516,11 @@ export function KilnReposHub() {
   const [liveFailed, setLiveFailed] = R.useState(false); // every seed lookup failed
   const [livePartial, setLivePartial] = R.useState(false); // some answered, some didn't
   const [loadNonce, setLoadNonce] = R.useState(0); // Retry bumps this to re-run the reads
-  const [query, setQuery] = R.useState("");
+  // The search field is UNCONTROLLED (ref, read at submit time), same
+  // pattern as the Explore Discover lookup (v37): the hub re-renders per
+  // account as public reads land, and a controlled field under that
+  // render pressure eats keystrokes on a phone keyboard.
+  const queryRef = R.useRef(null);
   const [searchRows, setSearchRows] = R.useState(null);
   const [searchMsg, setSearchMsg] = R.useState("");
   const [explorePick, setExplorePick] = R.useState(null);
@@ -577,7 +589,7 @@ export function KilnReposHub() {
   }, [loadNonce]);
 
   const runSearch = async () => {
-    const q = query.trim();
+    const q = (queryRef.current?.value ?? "").trim();
     if (q.length < 2) {
       setSearchMsg("Search needs at least two characters.");
       return;
@@ -733,8 +745,11 @@ export function KilnReposHub() {
                     className: "input",
                     style: { maxWidth: "22rem" },
                     placeholder: "Search public repositories…",
-                    value: query,
-                    onChange: (e) => setQuery(e.target.value),
+                    ref: queryRef,
+                    defaultValue: "",
+                    type: "text",
+                    autoComplete: "off",
+                    spellCheck: false,
                     autoCapitalize: "none",
                     autoCorrect: "off",
                   }),

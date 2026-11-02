@@ -636,7 +636,11 @@ function scaffoldManifest(form) {
 }
 
 function CreatePaperPanel({ me, wallet }) {
-  const [form, setForm] = R.useState({
+  // The form fields are UNCONTROLLED (v37 pattern): the values live in
+  // a ref the DOM writes directly, so no render can rewrite a field
+  // mid-keystroke on a phone. The manifest preview + create gate read
+  // the ref; a ~120ms-throttled tick re-renders the preview as you type.
+  const formRef = R.useRef({
     slug: "",
     title: "",
     authors: "",
@@ -644,10 +648,21 @@ function CreatePaperPanel({ me, wallet }) {
     license: "CC-BY-4.0",
     keywords: "",
   });
+  const [, setFormTick] = R.useState(0);
+  const formTimer = R.useRef(null);
   const [busy, setBusy] = R.useState(false);
   const [msg, setMsg] = R.useState("");
   const [doneId, setDoneId] = R.useState("");
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const set = (k) => (e) => {
+    formRef.current = { ...formRef.current, [k]: e.target.value };
+    if (formTimer.current == null) {
+      formTimer.current = setTimeout(() => {
+        formTimer.current = null;
+        setFormTick((t) => t + 1);
+      }, 120);
+    }
+  };
+  const form = formRef.current;
   const manifest = scaffoldManifest(form);
   const canCreate =
     me && form.slug.trim() && manifest.title && manifest.authors.length && manifest.license;
@@ -657,7 +672,10 @@ function CreatePaperPanel({ me, wallet }) {
     setMsg("");
     try {
       const owner = me.owner;
-      const name = form.slug.trim();
+      const name = formRef.current.slug.trim();
+      // Live manifest from the ref — never a render-tick behind the
+      // fields the user just typed.
+      const manifest = scaffoldManifest(formRef.current);
       await forge("POST", "/v1/repos", {
         owner,
         repo: name,
@@ -695,7 +713,7 @@ function CreatePaperPanel({ me, wallet }) {
         j.jsx("input", {
           key: "i",
           className: "input mt-1",
-          value: form[key],
+          defaultValue: formRef.current[key],
           onChange: set(key),
           ...props,
         }),
@@ -732,7 +750,7 @@ function CreatePaperPanel({ me, wallet }) {
           j.jsx("textarea", {
             className: "input mt-1",
             rows: 3,
-            value: form.authors,
+            defaultValue: formRef.current.authors,
             onChange: set("authors"),
             placeholder: "Ada Lovelace | Analytical Engines Lab",
           }),
@@ -745,7 +763,7 @@ function CreatePaperPanel({ me, wallet }) {
           j.jsx("textarea", {
             className: "input mt-1",
             rows: 4,
-            value: form.abstract,
+            defaultValue: formRef.current.abstract,
             onChange: set("abstract"),
             placeholder: "What the paper shows, in a paragraph.",
           }),
@@ -812,7 +830,10 @@ function CreatePaperPanel({ me, wallet }) {
 // ----------------------------------------------------------- release door
 
 function ReleasePanel({ repos, selected, onSelect, me, registry }) {
-  const [tag, setTag] = R.useState("");
+  // The tag field is UNCONTROLLED (ref, read at release time; v37
+  // pattern). tagReady exists only to arm the release button.
+  const tagRef = R.useRef(null);
+  const [tagReady, setTagReady] = R.useState(false);
   const [busy, setBusy] = R.useState("");
   const [msg, setMsg] = R.useState("");
   const rec = selected || null;
@@ -838,18 +859,19 @@ function ReleasePanel({ repos, selected, onSelect, me, registry }) {
   };
 
   const release = async () => {
-    if (!rec || !tag.trim()) return;
+    const tag = (tagRef.current?.value ?? "").trim();
+    if (!rec || !tag) return;
     setBusy("release");
     setMsg("");
     try {
       await forge("POST", `/v1/repos/${rec.owner}/${rec.name}/releases`, {
-        tag: tag.trim(),
-        name: manifest?.title || tag.trim(),
+        tag,
+        name: manifest?.title || tag,
       });
       setMsg(
         concept || (registry && registry.size)
-          ? `Release ${tag.trim()} created — the registry snapshots it as the next version of ${conceptIdOf(rec)}.`
-          : `Release ${tag.trim()} created on the forge. When the papers registry activates on the daemon, releases of designated papers are snapshotted as registered versions with generated citations.`,
+          ? `Release ${tag} created — the registry snapshots it as the next version of ${conceptIdOf(rec)}.`
+          : `Release ${tag} created on the forge. When the papers registry activates on the daemon, releases of designated papers are snapshotted as registered versions with generated citations.`,
       );
     } catch (e) {
       setMsg(String(e?.message || e));
@@ -922,8 +944,12 @@ function ReleasePanel({ repos, selected, onSelect, me, registry }) {
                         className: "input",
                         style: { maxWidth: "10rem" },
                         placeholder: "v1.0.0",
-                        value: tag,
-                        onChange: (e) => setTag(e.target.value),
+                        ref: tagRef,
+                        defaultValue: "",
+                        type: "text",
+                        autoComplete: "off",
+                        spellCheck: false,
+                        onInput: (e) => setTagReady(!!e.target.value.trim()),
                         autoCapitalize: "none",
                         autoCorrect: "off",
                       }),
@@ -931,7 +957,7 @@ function ReleasePanel({ repos, selected, onSelect, me, registry }) {
                         key: "r",
                         type: "button",
                         className: "btn btn-primary h-8",
-                        disabled: busy === "release" || !tag.trim(),
+                        disabled: busy === "release" || !tagReady,
                         onClick: release,
                         children: busy === "release" ? "Releasing…" : "Cut the release",
                       }),
