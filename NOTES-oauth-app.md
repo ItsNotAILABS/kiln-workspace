@@ -69,3 +69,50 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
   contract harness vs stub (.scratch/oauth_harness.mjs): 6/6 PASS
   (fragment parse x3, preflight not-configured, start URL shape, bogus
   handoff → 404 IdentityApiError).
+
+## Slice 3 — buttons wired for real (DONE)
+- Panel (kiln-identity.js, Sign-in section): "Continue with Google" /
+  "Continue with X" buttons → doOAuthStart: oauthPreflight(return=
+  location.pathname) → not configured: dedicated oauthOff slot with
+  OAUTH_NOT_CONFIGURED_TEXT ("…isn't switched on yet — the provider app
+  still needs to be created…", muted note styling, NOT the red error
+  banner); configured: window.location = oauthStartUrl (exact start URLs
+  in the header of this file). No better-auth calls.
+- Login chunk (login-CNvQADsL.js, surgical, count-asserted x2): handler E
+  rewritten from the honest cover to the same preflight → navigation flow
+  (fetch redirect:"manual"; 503+provider_not_configured → inline message
+  via the chunk's message slot w(); otherwise window.location = start
+  URL, return=/login). Providers map grok-google→google, grok-x→x.
+  Signup subcopy corrected ("Email, wallet, Google or X — every door
+  opens the same account."). grep: no signIn.social / signIn.oauth2
+  references remain in the chunk; the chunk's remaining better-auth use
+  is its legacy email form (out of this lane's scope, untouched).
+  FLAGGED: the chunk's only message slot is danger-styled (text-danger) —
+  inherited from the frozen chunk; the panel carries the properly
+  styled honest state.
+- Gates: node --check OK; load-sim RAN CLEAN (kiln-identity + login
+  chunk); cold render /login: panel OAuth buttons present, 0 pageerrors,
+  no banner. Google click probe: see Gates section (host-load retries).
+
+## Slice 4 — handle-pick view (DONE)
+- Panel: when signed out AND a pending token exists, the sign-in doors
+  are replaced by "Finish your KILN account" (eyebrow "Almost there"):
+  handle (lowercased, same regex as signup) + display name; submit →
+  completeOAuthSignup → session stored + refreshIdentity → signed-in
+  state via the existing restore flow. 409 → inline "@handle is taken —
+  pick another handle." in the form; pending token survives (module
+  state + sessionStorage), retry works. Other errors inline too.
+  Cancel drops the pending token and returns to the doors.
+
+## Slice 5 — /account "Sign-in & wallets" providers (DONE)
+- Signed-in section gains Google + X rows read from acct.oauthLinks:
+  linked → chip "Linked — can sign in" (+ "Linked <date>" when the
+  record carries linkedAt); not linked → chip "Not linked" + honest
+  copy (sign in with it once from the login page). Read-only display.
+- FLAGGED (not invented): linking an additional provider while already
+  signed in has NO door in the locked daemon contract (start is a
+  sign-in door; no link-start variant) — out of scope per task, flagged
+  here for the daemon lane.
+- Class audit vs styles-A_fIl0Ci.css: all tokens used exist (my-2 caught
+  missing by the audit and replaced with my-6 before commit; variant /
+  arbitrary-value tokens verified present in escaped form).
