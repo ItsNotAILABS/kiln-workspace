@@ -200,3 +200,68 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
   (page.evaluate stops answering after the synthetic handle input is
   set; the form, scrub and SET all proven) — the API-level proof
   stands; flow.mjs remains the re-run path.
+
+## LANDING RECEIPT (2026-11-02, deploy-only finish)
+- Landed on improve/ws-system-ui: fast-forward 1a58c56 -> 6e200c9
+  (ref update from the oauth-land worktree; the main tree's foreign
+  WIP — M ops-cloudflare/README.md, M public/kiln-account.json,
+  ?? data/ — was not disturbed; the stale index left by the ref move
+  was re-synced to HEAD with read-tree before this commit, and this
+  receipt commit contains ONLY this file).
+- Worker v52 (NOT v51 as pre-briefed — v51, version
+  7532cb74-d426-421e-af80-446086731748 / deployment
+  8ea3303f-58a0-4528-a0ca-5adfbad7ffa1, was already live for the
+  typing fixes): new version_id
+  0def9d21-1951-4e85-9692-d3384afd8756, deployment
+  edf3a8ad-f02c-4773-9848-b054098f0743 at 100%, confirmed via the
+  deployments API (latest entry, created 2026-11-02T09:35:40Z),
+  not just the script receipt. Deploy ran from the clean
+  oauth-land worktree: 212-file manifest, only 3 asset buckets
+  uploaded (the 3 changed assets).
+- Bindings verified on v52 BEFORE rollout: ASSETS (assets) ·
+  KILN_SWARM_TOKEN (secret_text, preserved via keep_bindings) ·
+  ORIGINAL_API_URL plain_text
+  https://kiln-original.medinatechlabs.net.
+- Served-bytes sha256, live == oauth-land tree, MATCH 3/3:
+  kiln-identity-core.js
+  aec9df8318d2116b1925fc121800f94ff626f34806fabc2ab14b638d216516d0 ·
+  kiln-identity.js
+  595dbf64a2fea7f542433b18c7fe2e983ad6c4d9d18aa2753a0fe2976df8f676 ·
+  login-CNvQADsL.js
+  1367e68c33ec08111c976a89c65ac56ecf952f92369ff71cd76bc011953d59c9.
+  GET https://kiln.pocketnova.app/ -> 200 (1,699 B).
+- Live preflight, first-hand (run twice, identical):
+  GET /api/forge/v1/accounts/oauth/google/start?return=/login ->
+  HTTP 401, body verbatim:
+  {"error":"unauthorized: valid token required (Bearer <redacted> or Basic password)"}
+  i.e. the staged daemon falls through to the operator gate (401),
+  not a 404, and not yet the post-boot 503.
+- FINDING (pre-boot click behavior, NOT patched — deploy-only lane):
+  a user clicking "Continue with Google" TODAY does NOT get the
+  muted not-switched-on state.
+  - Login chunk (login-CNvQADsL.js): its inline preflight only
+    special-cases 503 provider_not_configured; on any other status
+    (today's 401 included) it falls through to
+    window.location.href = <start URL>, landing the user on the
+    raw 401 JSON above.
+  - Panel (kiln-identity.js doOAuthStart): oauthPreflight in
+    kiln-identity-core.js likewise only maps 503
+    provider_not_configured to {configured:false}; the 401 throws
+    IdentityApiError and the catch renders the daemon's raw
+    "unauthorized: valid token required …" string as the error.
+    (isNotYetActive in the same core file already recognises this
+    exact 401 as the staged signal for the wallet doors, but the
+    OAuth preflight paths do not use it.)
+  After the next Doctor boot, once the daemon routes answer
+  503 {"error":"provider_not_configured"}, both paths behave as
+  designed: no navigation, and the honest copy "Google sign-in
+  isn't switched on yet — the provider app still needs to be
+  created. Sign in with your password or a wallet below: every
+  door opens the same account." (panel renders it muted —
+  border/bg-bg/text-muted; the chunk renders the same copy in its
+  danger-styled message slot, already flagged in the shortfalls
+  above). Fix candidate for a later lane: treat 404 and the
+  operator-gate 401 in oauthPreflight (and the chunk fallthrough)
+  as {configured:false} / not-yet-active, same as the wallet doors.
+- No daemon was restarted by this lane (swarm daemon and
+  kiln-original untouched, per constraints).
