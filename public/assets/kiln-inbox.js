@@ -16,11 +16,18 @@
  *    Kiln L1 transactions from the app ledger, each opening its full
  *    receipt at /chain/<hash>.
  *
- * Deliberately absent: workspace invites. Invites arrive by email
- * with a token; the daemon offers no "invites addressed to me" list
- * and the app has no workspace surface, so there is no honest feed
- * to render. The daemon-side door that would feed this section is
- * GET /v1/invites/mine — recorded in NOTES-design-round.md.
+ * Workspace invites (completeness round): with a forge account
+ * session, Needs Attention also lists the account's pending
+ * workspace invites from the daemon's GET /v1/invites/mine, read
+ * through this origin's /api/forge proxy with the session's Bearer
+ * token (the kiln-papers / kiln-repos pattern). The rows are
+ * information only: the app has no workspace-invite accept surface
+ * — acceptance happens from the invite email, whose token link
+ * completes the join — so no fake action is offered. Until the
+ * daemon activates the endpoint it 404s, and every failure mode
+ * (404, signed out, fetch error, malformed payload) degrades to
+ * the invites simply not appearing; nothing else in the inbox
+ * changes and no error is shown for it.
  *
  * Known interaction (pre-existing, left as-is): the header bell
  * panel marks all notices read when opened, so Needs Attention can
@@ -43,6 +50,20 @@ function rel(iso) {
     return formatDistanceToNow(new Date(iso), { addSuffix: true });
   } catch {
     return "";
+  }
+}
+
+const SESSION_KEY = "kiln.daemon.session.v1";
+
+/** The forge account session token, or null when signed out (kiln-papers pattern). */
+function sessionToken() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    return s && typeof s.token === "string" && s.token ? s.token : null;
+  } catch {
+    return null;
   }
 }
 
@@ -98,6 +119,49 @@ function NoticeRow({ n }) {
   });
 }
 
+/**
+ * One pending workspace invite, in the NoticeRow idiom. Rendered as
+ * information only — no link, no button: acceptance happens from
+ * the invite email's token link (see the header comment).
+ */
+function InviteRow({ inv }) {
+  const name = inv.workspaceName || inv.workspaceSlug || inv.workspaceId || "Workspace";
+  const parts = ["Workspace invite"];
+  if (inv.role) parts.push(`${inv.role} role`);
+  if (inv.workspaceSlug && inv.workspaceSlug !== name) parts.push(inv.workspaceSlug);
+  return j.jsx("li", {
+    children: j.jsxs("div", {
+      className: "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 hover:bg-surface-2",
+      children: [
+        j.jsxs("span", {
+          key: "main",
+          className: "min-w-0 flex-1",
+          children: [
+            j.jsxs("span", {
+              key: "t",
+              className: "flex items-center gap-2",
+              children: [
+                j.jsx("span", { key: "dot", className: "pulse-dot", style: { flex: "none" } }),
+                j.jsx("span", { key: "x", className: "text-sm font-medium text-fg", children: name }),
+              ],
+            }),
+            j.jsx("span", {
+              key: "b",
+              className: "mt-0.5 block truncate text-xs text-muted",
+              children: parts.join(" · "),
+            }),
+          ],
+        }),
+        j.jsx("span", {
+          key: "when",
+          className: "shrink-0 text-[11px] text-subtle",
+          children: inv.expiresAt ? `expires ${rel(inv.expiresAt)}` : rel(inv.createdAt),
+        }),
+      ],
+    }),
+  });
+}
+
 function Section({ title, count, children }) {
   return j.jsxs("section", {
     className: "mt-10",
@@ -138,6 +202,32 @@ export function KilnInbox() {
           setForgeFailed(true);
         }
       }
+    })();
+    return () => {
+      dead = true;
+    };
+  }, []);
+
+  // Pending workspace invites for the signed-in forge account. Every
+  // failure — no session, the endpoint's pre-activation 404, a fetch
+  // error, a malformed payload — leaves this empty and silent.
+  const [invites, setInvites] = R.useState([]);
+  R.useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const token = sessionToken();
+        if (!token) return;
+        const res = await fetch("/api/forge/v1/invites/mine", {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = (data && Array.isArray(data.invites) ? data.invites : []).filter(
+          (inv) => inv && typeof inv === "object" && (!inv.status || inv.status === "pending"),
+        );
+        if (!dead && list.length) setInvites(list);
+      } catch {}
     })();
     return () => {
       dead = true;
@@ -188,13 +278,39 @@ export function KilnInbox() {
       j.jsx(Section, {
         key: "attn",
         title: "Needs attention",
-        count: unread.length,
-        children: unread.length
-          ? j.jsx("ul", {
-              className: "mt-3 flex flex-col gap-1",
-              children: unread.map((n) => j.jsx(NoticeRow, { key: n.id, n })),
-            })
-          : j.jsx("p", { className: "mt-3 text-sm text-muted", children: "Nothing needs attention." }),
+        count: unread.length + invites.length,
+        children: [
+          invites.length
+            ? j.jsx("ul", {
+                key: "inv",
+                className: "mt-3 flex flex-col gap-1",
+                children: invites.map((inv) =>
+                  j.jsx(InviteRow, { key: inv.id || inv.workspaceId || inv.workspaceSlug, inv }),
+                ),
+              })
+            : null,
+          invites.length
+            ? j.jsx("p", {
+                key: "invnote",
+                className: "mt-2 text-xs text-subtle",
+                children: "Workspace invites are accepted from the invite email — its link completes the join.",
+              })
+            : null,
+          unread.length
+            ? j.jsx("ul", {
+                key: "unread",
+                className: "mt-3 flex flex-col gap-1",
+                children: unread.map((n) => j.jsx(NoticeRow, { key: n.id, n })),
+              })
+            : null,
+          !invites.length && !unread.length
+            ? j.jsx("p", {
+                key: "empty",
+                className: "mt-3 text-sm text-muted",
+                children: "Nothing needs attention.",
+              })
+            : null,
+        ],
       }),
 
       j.jsx(Section, {
