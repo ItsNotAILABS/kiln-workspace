@@ -166,6 +166,19 @@ flagged below.
   (component), kiln-repo-meta (KilnRepoMetaBar), AppShell graph —
   export sets identical to the parity branch's own gate run.
 
+## LANDING — Worker v49 created, bindings verified (2026-11-02)
+
+- Deploy from this clean worktree (`ops-cloudflare/deploy_worker.py`):
+  asset manifest 212 files (209 at v48 + the 3 new house modules);
+  exactly 6 assets were new/changed to the asset store (buckets
+  [2,2,2]) = the 6 batch JS files, nothing else.
+- **Worker v49** `05deb345-a035-43aa-88f3-9bbeeca25fc3` created
+  (NOT yet deployed at this checkpoint).
+- Bindings verified on v49 BEFORE rollout: ASSETS (assets),
+  KILN_SWARM_TOKEN (secret_text, preserved via keep_bindings),
+  ORIGINAL_API_URL (plain_text →
+  https://kiln-original.medinatechlabs.net) — BINDINGS_OK.
+
 ## Honest shortfalls
 - CI chip does NOT appear inside kiln-repos.js list rows (live-bugs
   lane owns that file; the task's preference was own-module rendering).
