@@ -56,6 +56,22 @@ import { repairRecord } from "./kiln-public.js";
   };
 })();
 
+// Agent invite landing: /agents/invite/<token> is three segments and
+// the frozen router answers it Not Found (the route tree has no such
+// route, and kiln-client.js is a locked file). Rewrite it HERE —
+// kiln-forge evaluates before kiln-client in index.html, so the
+// router never sees the dead path: stash the token and land on
+// /agents?invite=<token>, where kiln-agents.js renders the redeem
+// page. The link the sponsor sends never changes; its landing is real.
+try {
+  const m = globalThis.location.pathname.match(/^\/agents\/invite\/([^/]+)$/);
+  if (m) {
+    const token = decodeURIComponent(m[1]);
+    try { globalThis.sessionStorage.setItem("kiln.agent-invite.pending", token); } catch {}
+    globalThis.history.replaceState(null, "", "/agents?invite=" + encodeURIComponent(token));
+  }
+} catch {}
+
 export const KILN_HANDLE = "kiln";
 export const KILN_ADDRESS = "0xbb316d9499a18f9cd5e3691e25e04072308e3700";
 
