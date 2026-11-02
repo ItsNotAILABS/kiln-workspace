@@ -111,6 +111,50 @@ auro/kiln-agent-kit, auro/defi-kit, auro/blockchain-kit, auro/marketplace-paper.
   - Rows normalize `commitCount`/`fileCount` → the `commitsCount`/
     `filesCount` fields RepoRow prints (they never rendered before).
 
+## Verification log (fixed code, local instance on :8939 vs the REAL daemon)
+- Cold attempt at load ~33: 75.7 s → `{repos: [], degraded: true}` — honest
+  failure, NOT cached, NOT presented as empty. (Old code: same weather
+  produced a cached fake-empty, proven on the live domain above.)
+- Next attempt (load ~17–21): **215 s → 3 of 4 repos, `partial` behaviour**;
+  immediate re-request served the cache in **0.11 s** (SWR) while a
+  background refresh revalidated.
+- Unknown owner `zz-nobody-zz`: `{repos: []}` with **no degraded flag** in
+  0.03 s — verified-empty is distinguishable from failure, and caches.
+- Full compute (load ~20–28): **all 4 repos, 411,038 bytes, no degraded,
+  no partial**; follow-up serve in **0.009 s**.
+- **Downgrade incident found BY this verification:** the complete 4-repo
+  cache later regressed to a partial 2-repo body after a background
+  revalidation in a bad window. Fixed (commit 82535a4): a partial re-read
+  never replaces a complete cached answer.
+- Startup warm added (commit 77a1474): after a service restart the seed
+  accounts' public caches build in the background (accountDocBody
+  precedent), so the first signed-out visitor meets the cache, not the
+  compute. Failures warm nothing.
+- Render (mobile 375 px, fixed origin + fixed hub): cold /repos → clicked
+  "All repos" → rows for auro/kiln-agent-kit, auro/marketplace-paper,
+  auro/blockchain-kit rendered, **0 pageerrors**; meta line now shows
+  counts ("17 commits · 15 files") thanks to the field normalization.
+- Render (desktop): rows rendered, 0 pageerrors; marker repo defi-kit was
+  the one repo whose daemon read kept failing in that window (partial
+  state), the other rows rendered.
+- Load sims (design-round loadsim.mjs): kiln-repos.js + kiln-public.js
+  **RAN CLEAN** after edits, again after the partial-flag edits.
+- Honest limit: daemon latency in the worst windows (load 40+) exceeds
+  even the 25 s×2 per-call budget for the heavy per-repo compute
+  (details + commits + full tree + up to 41 file contents per repo). In
+  those windows the fixed surface degrades HONESTLY (degraded/partial +
+  Retry + last-known) instead of lying empty, and SWR serves the last
+  good answer instantly to every later visitor. The daemon-side latency
+  itself is outside this piece's layer.
+
 ## Activation flags
-- (pending) If the fix touches `scripts/serve-original.mjs`, landing needs a
-  kiln-original.service restart — coordinator sequences it; do NOT restart here.
+- ⚠️ **ACTIVATION: `scripts/serve-original.mjs` changed — landing needs a
+  kiln-original.service restart, sequenced by the coordinator. Do NOT
+  restart from this lane.** After the restart, the startup warm rebuilds
+  the public cache in the background (expect minutes in bad load); the
+  first requests may serve last-known/degraded until the first complete
+  compute lands, then SWR takes over.
+- `public/assets/kiln-public.js` + `public/assets/kiln-repos.js` are static
+  assets in the frozen build — they land with the normal app deploy, no
+  service restart of their own.
+- Edge worker (`ops-cloudflare/kiln-edge-worker.mjs`): NOT touched.
