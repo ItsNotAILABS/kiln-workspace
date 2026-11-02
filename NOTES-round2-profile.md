@@ -31,7 +31,17 @@ NOT deployed — coordinator lands commits.
   the bare form grid becomes a card (rounded-xl border bg-surface p-5, gap-3→gap-4); Save row
   gains "View public profile" (existing Link + /$owner params pattern); invite card mt-10→mt-6.
   Gates: node --check OK · class audit 56 tokens, none missing · load-sim RAN CLEAN.
-- [ ] 4 Build: _owner chunk surgical pass
+- [x] 4 Build: _owner chunk surgical pass — DONE (all replacements count-asserted ==1; only
+  in-scope bindings y/t/r/p/D used, in the chunk's own JSX patterns): aside becomes a profile
+  card (rounded-xl border bg-surface p-5, self-start lg:sticky lg:top-20); avatar shows word
+  initials (split on space/dash, uppercased, first-two-letters fallback — "Meridian Research"
+  now initials MR, not "Me"); address is a framed block (rounded-lg border bg-bg px-3 py-2);
+  counts line becomes a stats line with font-medium text-fg numbers (the followers-line pattern);
+  owner-only KLN balance line under it (store balance is the viewer's — rendered ONLY when the
+  viewer owns the profile, never on a stranger's page); Edit profile becomes btn-primary;
+  repo descriptions line-clamp-2; list rows py-3→py-4; meta list gap/margin aligned.
+  Gates: node --check OK · class audit 73 tokens, none missing · load-sim RAN CLEAN (wrapper +
+  KilnReposHub exports intact, so /repos is untouched).
 - [ ] 5 Gates: node --check, class audit, load-sim, cold renders desktop+375px, identity click-probe
 
 ## Class audit (styles-A_fIl0Ci.css, 2026-11-01 night)
