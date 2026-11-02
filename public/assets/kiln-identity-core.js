@@ -89,6 +89,31 @@ export function utf8Bytes(str) {
   return new TextEncoder().encode(String(str));
 }
 
+/** Base58 encode (Solana/Phantom addresses + Phantom UL fields). */
+export function base58Encode(bytes) {
+  const src = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  if (!src.length) return "";
+  let zeros = 0;
+  while (zeros < src.length && src[zeros] === 0) zeros++;
+  const digits = [0];
+  for (const byte of src) {
+    let carry = byte;
+    for (let i = 0; i < digits.length; i++) {
+      carry += digits[i] << 8;
+      digits[i] = carry % 58;
+      carry = Math.floor(carry / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  if (zeros === src.length) return "1".repeat(zeros); // the value is zero
+  let out = "1".repeat(zeros);
+  for (let i = digits.length - 1; i >= 0; i--) out += B58_ALPHABET[digits[i]];
+  return out;
+}
+
 // ------------------------------------------------- challenge message format
 
 /**
@@ -101,6 +126,22 @@ export function buildLinkMessage({ owner, address, nonce, expiresAt }) {
   return [
     "kiln-wallet-link",
     `account:${owner}`,
+    `address:${address}`,
+    `nonce:${nonce}`,
+    `expires:${expiresAt}`,
+  ].join("\n");
+}
+
+/**
+ * The daemon's wallet SIGN-IN message, byte-for-byte (Lane B,
+ * lib/accounts.mjs): own purpose tag, NO account line — the owning
+ * account is never revealed before proof of the key.
+ *
+ *   kiln-wallet-signin\naddress:<addr>\nnonce:<48hex>\nexpires:<iso>
+ */
+export function buildSignInMessage({ address, nonce, expiresAt }) {
+  return [
+    "kiln-wallet-signin",
     `address:${address}`,
     `nonce:${nonce}`,
     `expires:${expiresAt}`,
@@ -311,10 +352,28 @@ export async function decryptSecretBackup(blob, kdf, password) {
 // itself). The session token is the daemon's kiln_sess_ bearer.
 
 export class IdentityApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data) {
     super(message);
     this.status = status;
+    // The daemon's machine-readable refusal fields, when it sends them
+    // (wallet sign-in's unlinked refusal carries reason "wallet_not_linked").
+    this.reason = (data && (data.reason || data.code)) || null;
+    this.data = data || null;
   }
+}
+
+/**
+ * True when an answer means "this route is not on the running daemon
+ * yet" rather than a real refusal: the merged routes are staged until
+ * the next Doctor boot, and a staged daemon either 404s the route or
+ * lets the request fall through to the operator gate (401 with the
+ * generic token-required error, measured live 2026-11-02).
+ */
+export function isNotYetActive(e) {
+  if (!(e instanceof IdentityApiError)) return false;
+  if (e.status === 404) return true;
+  if (e.status === 401 && /valid token required/i.test(e.message || "")) return true;
+  return false;
 }
 
 export function createIdentityClient({ fetchImpl, getToken, base = "/api/forge/v1" } = {}) {
@@ -334,7 +393,7 @@ export function createIdentityClient({ fetchImpl, getToken, base = "/api/forge/v
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      throw new IdentityApiError(res.status, (data && data.error) || `request failed (${res.status})`);
+      throw new IdentityApiError(res.status, (data && data.error) || `request failed (${res.status})`, data);
     }
     return data;
   }
@@ -343,6 +402,54 @@ export function createIdentityClient({ fetchImpl, getToken, base = "/api/forge/v
     signup: ({ email, name, owner, password }) =>
       call("POST", "/accounts", { email, name, owner, password }, { auth: false }),
     login: ({ email, password }) => call("POST", "/accounts/login", { email, password }, { auth: false }),
+    // Wallet sign-in (Lane B): PUBLIC bootstrap doors, like login. The
+    // challenge names no account; verify mints a normal session for
+    // the account the wallet is LINKED to, and only after the
+    // signature verifies does the daemon reveal link state (unlinked
+    // → 403 with reason "wallet_not_linked").
+    walletChallenge: ({ address, publicKeyHex }) =>
+      call(
+        "POST",
+        "/accounts/wallet/challenge",
+        publicKeyHex ? { address, publicKey: publicKeyHex } : { address },
+        { auth: false },
+      ),
+    walletVerify: ({ challengeId, address, signatureHex, publicKeyHex }) =>
+      call(
+        "POST",
+        "/accounts/wallet/verify",
+        {
+          challengeId,
+          address,
+          signature: signatureHex,
+          ...(publicKeyHex ? { publicKey: publicKeyHex } : {}),
+        },
+        { auth: false },
+      ),
+    // Agent accounts + invite links (Lane C). Session doors, except
+    // redemption, which is the public bootstrap: the link IS the
+    // credential.
+    listAgents: () => call("GET", "/accounts/me/agents"),
+    listAgentAccounts: () => call("GET", "/accounts/me/agent-accounts"),
+    createAgentAccount: ({ owner, name, modelLabel, scopes }) =>
+      call("POST", "/accounts/me/agent-accounts", {
+        owner,
+        name,
+        ...(modelLabel ? { modelLabel } : {}),
+        ...(scopes ? { scopes } : {}),
+      }),
+    severAgentAccount: (id) => call("DELETE", `/accounts/me/agent-accounts/${encodeURIComponent(id)}`),
+    mintAgentInvite: ({ label } = {}) =>
+      call("POST", "/accounts/me/agent-invites", label ? { label } : {}),
+    listAgentInvites: () => call("GET", "/accounts/me/agent-invites"),
+    revokeAgentInvite: (id) => call("DELETE", `/accounts/me/agent-invites/${encodeURIComponent(id)}`),
+    redeemAgentInvite: (token, { owner, name, modelLabel }) =>
+      call(
+        "POST",
+        `/agent-invites/${encodeURIComponent(token)}/redeem`,
+        { owner, name, ...(modelLabel ? { modelLabel } : {}) },
+        { auth: false },
+      ),
     me: () => call("GET", "/accounts/me"),
     listWallets: () => call("GET", "/accounts/me/wallets"),
     challenge: (address) => call("POST", "/accounts/me/wallets/challenge", { address }),
@@ -402,4 +509,51 @@ export async function linkPhantomWallet(client, { address, signMessage }) {
     challengeId: ch.challengeId,
     signatureHex: bytesToHex(new Uint8Array(sigBytes)),
   });
+}
+
+// ------------------------------------------------------- wallet sign-in
+//
+// The sign-in twins of the link flows above: ask the daemon for a
+// sign-in challenge, sign its message verbatim, verify. Verify returns
+// { account, sessionToken, expiresAt, wallet } — a normal session for
+// the OWNING account. Callers persist it exactly like a password
+// sign-in; there is no separate "wallet session".
+
+/** Sign in with this browser's local (0x) wallet key. */
+export async function signInWithLocalWallet(client, { address, secretHex }) {
+  const seed = hexToBytes(secretHex);
+  if (!seed || seed.length !== 32) throw new Error("This wallet's secret isn't a 32-byte key — it can't sign in");
+  const pub = await ed25519PublicKey(seed);
+  const ch = await client.walletChallenge({ address, publicKeyHex: bytesToHex(pub) });
+  const sig = await ed25519Sign(seed, utf8Bytes(ch.message));
+  return client.walletVerify({
+    challengeId: ch.challengeId,
+    address,
+    signatureHex: bytesToHex(sig),
+    publicKeyHex: bytesToHex(pub),
+  });
+}
+
+/**
+ * Sign in with a Phantom signature over a fresh challenge. The
+ * signMessage callback abstracts the transport: the injected provider
+ * today, a universal-link redirect round trip on mobile — both hand
+ * back the same 64 signature bytes for the same challenge.
+ */
+export async function signInWithPhantomSignature(client, { address, challenge, signatureBytes }) {
+  const sigBytes = signatureBytes && signatureBytes.signature ? signatureBytes.signature : signatureBytes;
+  if (!sigBytes || sigBytes.length !== 64) throw new Error("Phantom didn't return a signature");
+  return client.walletVerify({
+    challengeId: challenge.challengeId,
+    address,
+    signatureHex: bytesToHex(new Uint8Array(sigBytes)),
+  });
+}
+
+export async function signInWithPhantomWallet(client, { address, signMessage }) {
+  const pub = base58Decode(address);
+  if (!pub || pub.length !== 32) throw new Error("Phantom returned an address that isn't a Solana public key");
+  const ch = await client.walletChallenge({ address });
+  const signed = await signMessage(utf8Bytes(ch.message));
+  return signInWithPhantomSignature(client, { address, challenge: ch, signatureBytes: signed });
 }
