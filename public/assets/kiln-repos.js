@@ -15,6 +15,10 @@
  *  ALL REPOS — the whole app's PUBLIC repos: the public API's known
  *    accounts merged live, plus search over /api/kiln/public/search.
  *    Private repos are never returned by that surface, for anyone.
+ *    Store-held public records (merged from earlier answers of the same
+ *    API) render immediately as last known while the live reads run;
+ *    "forge unreachable" and "truly no public repos" are distinct
+ *    states — a failed read never renders as an empty forge.
  *  EXPLORER — a read-only file explorer. Public repos browse from
  *    their public record (files[] with text content inline when the
  *    record carries it); the user's own store repos browse from
@@ -41,6 +45,20 @@ const j = jsxmod();
 
 const SESSION_KEY = "kiln.daemon.session.v1";
 const SEED_ACCOUNTS = ["auro", "itsnotailabs"];
+
+// The origin's public records count commits/files in the singular
+// (commitCount/fileCount); RepoRow prints the plural fields. Normalize
+// at ingestion — live answers and store-held records alike — so public
+// rows render their meta line.
+function normPubRec(r) {
+  if (!r || typeof r !== "object") return r;
+  const commitsCount =
+    typeof r.commitsCount === "number" ? r.commitsCount : typeof r.commitCount === "number" ? r.commitCount : undefined;
+  const filesCount =
+    typeof r.filesCount === "number" ? r.filesCount : typeof r.fileCount === "number" ? r.fileCount : undefined;
+  if (r.commitsCount === commitsCount && r.filesCount === filesCount) return r;
+  return { ...r, commitsCount, filesCount };
+}
 
 function sessionToken() {
   try {
@@ -485,28 +503,76 @@ export function KilnReposHub() {
   );
 
   const [seg, setSeg] = R.useState("mine");
-  const [pubRepos, setPubRepos] = R.useState(null);
+  const [liveRepos, setLiveRepos] = R.useState(null); // null until a seed account answers
+  const [liveDone, setLiveDone] = R.useState(false); // every seed lookup settled
+  const [liveFailed, setLiveFailed] = R.useState(false); // every seed lookup failed
+  const [livePartial, setLivePartial] = R.useState(false); // some answered, some didn't
+  const [loadNonce, setLoadNonce] = R.useState(0); // Retry bumps this to re-run the reads
   const [query, setQuery] = R.useState("");
   const [searchRows, setSearchRows] = R.useState(null);
   const [searchMsg, setSearchMsg] = R.useState("");
   const [explorePick, setExplorePick] = R.useState(null);
 
+  // Last-known public records: real records this device already holds from
+  // earlier answers of the same public API (kiln-public.js merges every
+  // lookup into the store, marked forgePublic). They render immediately —
+  // a slow or wedged forge must not blank a list the device can already
+  // prove — and live answers replace them per id as they land. Only
+  // forgePublic records qualify: nothing is invented, and no private or
+  // local record can enter the public list through this door.
+  const storePublic = R.useMemo(
+    () =>
+      (allRepos(state) || [])
+        .filter((r) => r && r.forgePublic === true && r.visibility === "public")
+        .map(normPubRec),
+    [state],
+  );
+  const pubRepos = R.useMemo(() => {
+    const byId = new Map();
+    for (const r of storePublic) byId.set(r.id, r);
+    for (const r of liveRepos || []) byId.set(r.id, r);
+    return [...byId.values()];
+  }, [storePublic, liveRepos]);
+
+  // Seed reads run CONCURRENTLY and merge per account as each lands: the
+  // old shape awaited both accounts in sequence and published once at the
+  // end, so the slowest (or a hung) account held every row hostage, and a
+  // fully failed read was indistinguishable from a truly empty forge.
   R.useEffect(() => {
     let dead = false;
-    (async () => {
-      const byId = new Map();
-      for (const owner of SEED_ACCOUNTS) {
+    let settled = 0;
+    let answered = 0;
+    setLiveDone(false);
+    setLiveFailed(false);
+    setLivePartial(false);
+    for (const owner of SEED_ACCOUNTS) {
+      (async () => {
+        let out = null;
         try {
-          const out = await lookupPublicAccount(owner);
-          for (const r of (out && out.repos) || []) byId.set(r.id, r);
+          out = await lookupPublicAccount(owner);
         } catch {}
-      }
-      if (!dead) setPubRepos([...byId.values()]);
-    })();
+        if (dead) return;
+        settled += 1;
+        if (out && out.ok) {
+          answered += 1;
+          const rows = (out.repos || []).map(normPubRec);
+          setLiveRepos((prev) => {
+            const byId = new Map((prev || []).map((r) => [r.id, r]));
+            for (const r of rows) byId.set(r.id, r);
+            return [...byId.values()];
+          });
+        }
+        if (settled === SEED_ACCOUNTS.length) {
+          setLiveDone(true);
+          if (!answered) setLiveFailed(true);
+          else if (answered < settled) setLivePartial(true);
+        }
+      })();
+    }
     return () => {
       dead = true;
     };
-  }, []);
+  }, [loadNonce]);
 
   const runSearch = async () => {
     const q = query.trim();
@@ -517,7 +583,7 @@ export function KilnReposHub() {
     setSearchMsg("Searching the forge…");
     try {
       const out = await searchPublic(q);
-      setSearchRows(out.repos || []);
+      setSearchRows((out.repos || []).map(normPubRec));
       setSearchMsg(
         out.repos && out.repos.length ? "" : "No public repositories match that search.",
       );
@@ -679,18 +745,70 @@ export function KilnReposHub() {
               j.jsx("ul", {
                 key: "list",
                 className: "mt-4 flex flex-col gap-3",
-                children: (searchRows !== null ? searchRows : pubRepos || []).map((rec) =>
+                children: (searchRows !== null ? searchRows : pubRepos).map((rec) =>
                   j.jsx(RepoRow, { key: rec.id, rec, onExplore: openExplorer }),
                 ),
               }),
-              pubRepos === null && searchRows === null
-                ? j.jsx("p", { key: "load", className: "mt-4 text-sm text-muted", children: "Reading the forge…" })
+              // Four distinct states, never conflated: still reading /
+              // rows shown are last-known while the forge re-reads or
+              // failed / the forge is unreachable (with a way back) /
+              // every read succeeded and the forge is truly empty. The
+              // old single "No public repositories answered" message
+              // fired for all of them, including plain connection
+              // failures — that conflation WAS the bug report.
+              searchRows === null && !liveDone
+                ? j.jsx("p", {
+                    key: "load",
+                    className: "mt-4 text-sm text-muted",
+                    children: pubRepos.length
+                      ? "Reading the forge for the latest…"
+                      : "Reading the forge…",
+                  })
                 : null,
-              searchRows === null && pubRepos && !pubRepos.length
+              searchRows === null && liveDone && liveFailed && pubRepos.length
+                ? j.jsx("p", {
+                    key: "stale",
+                    className: "mt-4 text-sm text-muted",
+                    children:
+                      "The forge didn't answer just now — showing the public records this device already holds.",
+                  })
+                : null,
+              searchRows === null && liveDone && liveFailed && !pubRepos.length
+                ? j.jsxs("div", {
+                    key: "down",
+                    className: "mt-4",
+                    children: [
+                      j.jsx("p", {
+                        key: "t",
+                        className: "max-w-2xl text-sm leading-relaxed text-muted",
+                        children:
+                          "The forge's public surface didn't answer just now, so this list couldn't be read. That is a connection problem, not an empty forge.",
+                      }),
+                      j.jsx("button", {
+                        key: "retry",
+                        type: "button",
+                        className: "btn h-8",
+                        style: { marginTop: "0.75rem" },
+                        onClick: () => setLoadNonce((n) => n + 1),
+                        children: "Try again",
+                      }),
+                    ],
+                  })
+                : null,
+              searchRows === null && liveDone && livePartial
+                ? j.jsx("p", {
+                    key: "partial",
+                    className: "mt-4 text-sm text-muted",
+                    children:
+                      "One account's read didn't answer — the list may be incomplete. It re-reads on the next visit.",
+                  })
+                : null,
+              searchRows === null && liveDone && !liveFailed && !livePartial && !pubRepos.length
                 ? j.jsx("p", {
                     key: "none",
                     className: "mt-4 text-sm text-muted",
-                    children: "No public repositories answered — the list reads the forge's public surface live.",
+                    children:
+                      "No public repositories on the forge yet. When an account publishes one, it appears here.",
                   })
                 : null,
             ],
