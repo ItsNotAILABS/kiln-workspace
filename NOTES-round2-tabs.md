@@ -19,7 +19,7 @@ Shortcuts = modal (AppShell, `kiln:shortcuts` event), not a route.
 | Cloud | Signed-in cloud console; signed-out surface exists in code | TBD | first probe returned header-only (renderer saturation suspected) — re-probe owed |
 | Account | Owned by sibling profile piece | inventory + small fixes only | TBD |
 | Organizations | List + honest empty state + /orgs/new door | TBD | TBD |
-| Pricing | INVENTED prices/offerings: Team "$20 / user / month", "kiln.app preview domain", "Priority Grok seats", "On-prem or edge (XCREW)", SSO etc. — no architect ruling backs these | honest pending-pricing surface (structure kept) | desktop render OK pre-fix (1046 chars, 0 pageerrors) |
+| Pricing | INVENTED prices/offerings: Team "$20 / user / month", "kiln.app preview domain", "Priority Grok seats", "On-prem or edge (XCREW)", SSO etc. — no architect ruling backs these | FIXED: same 3-card structure, honest copy — card 1 what exists today (incl. the decided 100 GiB), card 2 orgs live but team pricing = pending decision / no seat charges, card 3 no enterprise package on sale; header now "Pricing is not final yet." No invented numbers remain | node --check OK; re-render owed in batch gate |
 | Architecture | Crew-kernel spec page renders fully; footer links "Paper: KILN-WP-09 Crew Kernel" to /papers/crew — no such paper record exists (real record is auro/marketplace-paper) → dead door | TBD | desktop render OK (2744 chars, 0 pageerrors) |
 | Gists | Create form is LOCAL STATE ONLY — gists vanish on reload, never saved/sealed, copy claims "Instant sealed snippets. Same cipher as a repository" (lies) | TBD | TBD |
 | Bounties | Lists store issues with bountyKln>0; NO empty state — empty <ul> renders as a bare box, header claims escrow total | TBD | TBD |
