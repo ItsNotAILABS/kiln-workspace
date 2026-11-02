@@ -135,3 +135,23 @@ prove against an EPHEMERAL instance of the merged daemon code.
   then the doors show their honest "activating" state and steer to password;
   password sign-in, wallet linking/backup, and delegated agents are live
   today as before.
+
+## Independent re-verification (second landing pass, 2026-11-02)
+- Merged-tree equivalence: `git diff --name-only HEAD 836e6a6` empty at
+  88cc4c8 — the cherry-picked tree is byte-identical to the branch tip.
+  Changed-file set (9 files) contains none of kiln-papers.js, kiln-repos.js,
+  kiln-vault.js or serve-original — no live-bugs-lane conflicts arose.
+- Gates re-run on the merged tree: node --check 8/8 OK; load-sim RAN CLEAN
+  for kiln-identity-core, kiln-phantom-ul, kiln-agents, kiln-identity,
+  _owner graph, login chunk and account chunk (chunk graphs keep timers
+  alive after printing RAN CLEAN — verdict is the print, not the exit).
+- Bindings re-verified on live v47 (193059ea…): BINDINGS_OK — ASSETS,
+  KILN_SWARM_TOKEN secret_text, ORIGINAL_API_URL plain_text correct.
+  Deployments API confirms 622a5f8e at 100% (2026-11-02T07:56:55Z).
+- Served-bytes sha256 re-run vs the main tree: ALL 8 changed assets MATCH.
+- Live-origin headless render from this sandbox: BLOCKED at the network
+  layer (ERR_TUNNEL_CONNECTION_FAILED on /login, /agents,
+  /agents/invite/<token> — Chromium cannot traverse the egress proxy here;
+  no page loaded, so no app verdict either way). Render evidence remains
+  the staged-origin proof over identical bytes above. Not faked, not
+  claimed.
