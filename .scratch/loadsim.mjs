@@ -6,7 +6,7 @@ import vm from "node:vm";
 import fs from "node:fs";
 import path from "node:path";
 
-const ASSETS = "/home/hatch/workspace/.worktrees/kiln-oauth-app/public/assets";
+const ASSETS = "/home/hatch/workspace/.worktrees/kiln-oauth-preflight/public/assets";
 const store = new Map();
 const el = () => ({
   style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false },

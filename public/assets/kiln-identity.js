@@ -250,10 +250,18 @@ export async function processOAuthReturn() {
   } catch (e) {
     // A spent/unknown handoff code is not a form error and NEVER the old
     // "Sign-in failed" banner: say what happened and steer to the doors.
+    // A pre-boot staged daemon answers the exchange with the
+    // operator-gate 401 (isNotYetActive): that link isn't active yet —
+    // say exactly that, never the daemon's raw string. (A staged 404
+    // keeps the used/expired wording: isNotYetActive also matches 404,
+    // so the not-yet-active branch must test the 401 case only, via
+    // status, before the 404 branch.)
     oauthNotice =
-      e instanceof IdentityApiError && e.status === 404
-        ? "That sign-in link has already been used or has expired — start again from a sign-in button below."
-        : "That sign-in couldn't be finished — start again from a sign-in button below.";
+      e instanceof IdentityApiError && e.status === 401 && isNotYetActive(e)
+        ? "That sign-in link isn't active yet — the Google and X doors switch on with the next daemon update. Sign in with your password or a wallet below: every door opens the same account."
+        : e instanceof IdentityApiError && e.status === 404
+          ? "That sign-in link has already been used or has expired — start again from a sign-in button below."
+          : "That sign-in couldn't be finished — start again from a sign-in button below.";
     emit();
   } finally {
     oauthReturnRunning = false;
@@ -792,9 +800,13 @@ export function KilnIdentityPanel() {
       } catch (e) {
         // 409 (handle taken) and every other refusal stay INLINE in the
         // form; the pending token survives, so picking another handle
-        // and retrying just works.
+        // and retrying just works. A pre-boot staged daemon answers
+        // with 404 or the operator-gate 401 (isNotYetActive): show the
+        // honest not-active copy, never the daemon's raw string.
         if (e instanceof IdentityApiError && e.status === 409) {
           setPkErr(`@${pkOwner.trim().toLowerCase()} is taken — pick another handle.`);
+        } else if (isNotYetActive(e)) {
+          setPkErr("That sign-in isn't active yet — the Google and X doors switch on with the next daemon update, and this finish step can't complete until then. Your place is kept on this browser; try again after the update.");
         } else {
           setPkErr(e instanceof Error ? e.message : "That handle couldn't be claimed");
         }

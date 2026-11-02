@@ -265,3 +265,59 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
   as {configured:false} / not-yet-active, same as the wallet doors.
 - No daemon was restarted by this lane (swarm daemon and
   kiln-original untouched, per constraints).
+
+## PREFLIGHT FIX — checkpoint 1 (investigation, 2026-11-02)
+- Clean worktree ~/workspace/.worktrees/kiln-oauth-preflight off ff8a1eb.
+- Core: oauthPreflight only maps 503 provider_not_configured; other
+  statuses parse + throw IdentityApiError — 401 operator-gate and 404
+  fall there. isNotYetActive(e) already tests exactly: status 404, or
+  401 with /valid token required/i on the message.
+- Panel doOAuthStart: already consumes {configured:false} correctly
+  (setOAuthOff(OAUTH_NOT_CONFIGURED_TEXT[provider]), busy cleared, no
+  navigation) — no change needed there once preflight is fixed.
+- Handoff (processOAuthReturn): notice is a FIXED string (404-specific
+  or generic "couldn't be finished") — raw daemon string never shown,
+  so it already degrades honestly; will add an isNotYetActive branch
+  so a pre-boot 401 says "isn't active yet" specifically.
+- Pending complete (doOAuthComplete): OTHER branch renders e.message
+  raw — a pre-boot 401 from oauthComplete WOULD show the daemon's raw
+  "unauthorized: valid token required …" string inline. Same-class
+  defect, will fix with isNotYetActive → honest pkErr copy (pending
+  token survives: completeOAuthSignup only clears it on success).
+- Login chunk handler E: inline preflight, count of
+  provider_not_configured segment = 1 (surgical target confirmed).
+
+## PREFLIGHT FIX — checkpoint 2 (edits done)
+- kiln-identity-core.js oauthPreflight: non-ok answers now build the
+  IdentityApiError first, return {configured:false} when
+  isNotYetActive(err) (404 / operator-gate 401), else throw. 503
+  provider_not_configured unchanged. Scoped to this preflight only.
+- kiln-identity.js: (a) processOAuthReturn adds a 401+isNotYetActive
+  branch — "That sign-in link isn't active yet …"; 404 wording and
+  generic fallback unchanged (raw string was never shown here).
+  (b) doOAuthComplete adds isNotYetActive → honest pkErr copy instead
+  of the raw e.message (the one same-class raw-string path found).
+- login-CNvQADsL.js: count-asserted (x1) inline preflight — body parsed
+  once; (503+provider_not_configured) OR 404 OR (401 + /valid token
+  required/i on error) → honest copy via w(), NO navigation.
+- node --check: core, identity, chunk all OK.
+
+## PREFLIGHT FIX — checkpoint 3 (gates, all green)
+- Stub harness (.scratch/preflight_harness.mjs, real core client +
+  fake fetch): 8/8 PASS — 401 operator-gate → {configured:false},
+  404 (body + no-body) → {configured:false}, 503
+  provider_not_configured → {configured:false}, 500 throws,
+  401 other-message throws (scope guard), 503 other throws,
+  302 → {configured:true}.
+- Load-sim RAN CLEAN: kiln-identity-core.js, kiln-identity.js,
+  login-CNvQADsL.js.
+- Browser click probe vs a pre-boot GATE stub reproducing the live
+  401 verbatim (.scratch/gate_stub.mjs + gate_serve.mjs +
+  gate_probe.mjs, local origin :18948): cold /login renders (2 Google
+  buttons, 0 pageerrors); click 0 (login chunk) PASS and click 1
+  (panel) PASS — honest "isn't switched on yet" copy x1, URL stays
+  /login, no raw gate string, no "Sign-in failed", 0 pageerrors.
+- Handoff probe (.scratch/gate_handoff_probe.mjs): landing on
+  /login#oauth_handoff=boguscode against the gate stub shows "That
+  sign-in link isn't active yet", fragment scrubbed, no raw string,
+  0 pageerrors — PASS.

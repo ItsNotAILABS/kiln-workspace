@@ -480,7 +480,14 @@ export function createIdentityClient({ fetchImpl, getToken, base = "/api/forge/v
     // navigation to a not-configured daemon would land on raw JSON.
     // Preflight resolves { configured: boolean } and never throws for the
     // 503 provider_not_configured answer — that state is server-driven
-    // copy in the panel, not an error. Other failures DO throw.
+    // copy in the panel, not an error. It also never throws for the
+    // pre-boot staged answers: until the daemon boot that activates
+    // these routes, the start door 404s or falls through to the
+    // operator gate (401 "valid token required", measured live
+    // 2026-11-02) — isNotYetActive recognises exactly those, scoped to
+    // THIS preflight only, and they mean the same thing to the user:
+    // not switched on yet, { configured: false }. Other failures DO
+    // throw (a genuine 401 with any other message, a 500, …).
     oauthStartUrl: (provider, returnPath) =>
       `${base}/accounts/oauth/${encodeURIComponent(provider)}/start?return=${encodeURIComponent(returnPath || "/login")}`,
     oauthPreflight: async (provider, returnPath) => {
@@ -500,7 +507,9 @@ export function createIdentityClient({ fetchImpl, getToken, base = "/api/forge/v
         return { configured: true };
       }
       const data = await res.json().catch(() => null);
-      throw new IdentityApiError(res.status, (data && data.error) || `request failed (${res.status})`, data);
+      const err = new IdentityApiError(res.status, (data && data.error) || `request failed (${res.status})`, data);
+      if (isNotYetActive(err)) return { configured: false };
+      throw err;
     },
     // Callback exchanges. Handoff: the daemon matched the provider
     // identity to an account — exchange the one-shot code for a normal
