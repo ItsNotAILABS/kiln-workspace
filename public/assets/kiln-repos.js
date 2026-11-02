@@ -542,6 +542,7 @@ export function KilnReposHub() {
     let dead = false;
     let settled = 0;
     let answered = 0;
+    let anyPartial = false;
     setLiveDone(false);
     setLiveFailed(false);
     setLivePartial(false);
@@ -555,6 +556,7 @@ export function KilnReposHub() {
         settled += 1;
         if (out && out.ok) {
           answered += 1;
+          if (out.partial) anyPartial = true;
           const rows = (out.repos || []).map(normPubRec);
           setLiveRepos((prev) => {
             const byId = new Map((prev || []).map((r) => [r.id, r]));
@@ -565,7 +567,7 @@ export function KilnReposHub() {
         if (settled === SEED_ACCOUNTS.length) {
           setLiveDone(true);
           if (!answered) setLiveFailed(true);
-          else if (answered < settled) setLivePartial(true);
+          else if (answered < settled || anyPartial) setLivePartial(true);
         }
       })();
     }
@@ -800,7 +802,7 @@ export function KilnReposHub() {
                     key: "partial",
                     className: "mt-4 text-sm text-muted",
                     children:
-                      "One account's read didn't answer — the list may be incomplete. It re-reads on the next visit.",
+                      "Part of the forge's answer didn't come back — the list may be incomplete. It re-reads on the next visit.",
                   })
                 : null,
               searchRows === null && liveDone && !liveFailed && !livePartial && !pubRepos.length

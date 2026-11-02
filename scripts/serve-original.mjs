@@ -418,7 +418,10 @@ function refreshPublicAccount(owner) {
     try {
       const { repos, failures, listed } = await computePublicAccount(owner);
       if (listed > 0 && repos.length === 0 && failures > 0) return null;
-      const body = JSON.stringify({ ok: true, owner, repos });
+      // A partial body says so on its face: the repos in it are real, but
+      // the list is not the whole account, and no reader may present it
+      // as one.
+      const body = JSON.stringify({ ok: true, owner, repos, ...(failures > 0 ? { partial: true } : {}) });
       publicAccountCache.set(owner, { at: Date.now(), body, complete: failures === 0 });
       return body;
     } catch {

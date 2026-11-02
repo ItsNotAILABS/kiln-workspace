@@ -378,7 +378,7 @@ export async function lookupPublicAccount(rawOwner) {
   const repos = data.repos;
   const canonical = data?.owner || owner;
   await mergePublicAccount(canonical, repos);
-  return { ok: true, owner: canonical, repos };
+  return { ok: true, owner: canonical, repos, partial: data.partial === true };
 }
 
 export async function searchPublic(rawQuery) {
