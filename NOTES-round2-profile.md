@@ -42,7 +42,48 @@ NOT deployed — coordinator lands commits.
   repo descriptions line-clamp-2; list rows py-3→py-4; meta list gap/margin aligned.
   Gates: node --check OK · class audit 73 tokens, none missing · load-sim RAN CLEAN (wrapper +
   KilnReposHub exports intact, so /repos is untouched).
-- [ ] 5 Gates: node --check, class audit, load-sim, cold renders desktop+375px, identity click-probe
+- [x] 5 Gates — DONE with two environmental shortfalls disclosed below.
+  node --check: OK on all three edited files. Class audit: kiln-identity 66 tokens, account 56,
+  _owner 73 — none missing. Load-sim: RAN CLEAN for kiln-identity (+core), account, _owner (+repos
+  hub) — and RAN CLEAN again for _owner after the initials fix.
+  AFTER renders (.scratch/after-desktop.txt, after-mobile.txt): /account desktop+375 — 0 pageerrors,
+  no h-overflow, eyebrows ACCOUNT / NEW HERE render, sign-in + create forms intact; /meridian
+  desktop+375 — 0 pageerrors, no overflow, avatar "MR" (after the displayName-first fix below),
+  stats/address/card composition renders, NO balance line while signed out (correct — balance is
+  owner-only). Console entries remain only the environmental ERR_TUNNEL external-fetch failures.
+  FIX caught by the after-gate: first initials build read lab before displayName ("Meridian" →
+  "M"); initials now read displayName first (Meridian Research → MR), fallback lab/handle.
+  IDENTITY CLICK-PROBE (.scratch/genprobe*.txt): controls inventory from the live panel —
+  inputs: sign-in email (autocomplete=email), sign-in password (current-password), signup email,
+  name, handle, password (new-password), X handle; buttons: "Sign in & restore my wallet",
+  "Generate wallet", "Connect Phantom", "Create account" — all present, 0 pageerrors. Generate
+  wallet CLICK PROVEN (first probe run): click landed, panel showed "This browser's wallet:
+  0x04de3f85…", blob held the new wallet (handle member). Restore/link sections exist only in the
+  forge-session signed-in state, which this sandbox cannot hold (below) — their code paths are
+  untouched and load-sim clean. Typing probe: the email input resolved but fill timed out on
+  actionability under host load 37–52 (renderer starvation, the documented sandbox wall); the
+  inputs are the panel's original controlled inputs, unmodified.
+  SANDBOX WALLET NOTE (pre-existing, not this round): a wallet created in the app (or seeded
+  into kiln-v2) does not survive a full page reload in this sandbox — the blob returns
+  wallet:null after boot, including for a wallet the app itself just generated. Nothing in this
+  round touches connect/persist/rehydrate, and the same loss reproduces through the pristine
+  Generate flow, so the signed-in /account + own-profile branches could not be captured cold;
+  they are verified by binding-level code audit + load-sim + the in-panel wallet state above.
+  Host load during gates: 19 → 116 (other lanes) — several probes starved/aborted; every
+  completed render above is a real cold load of this worktree's origin (:18931).
+  NOT done: /auro AFTER render (before-render exists; /meridian exercises the same component
+  in both viewports after — auro's local data is an honest empty repo list tonight).
+
+## Deliberately left alone
+- kiln-identity-core.js + all identity handlers/session/crypto: untouched, per the hard constraint.
+- The backup-offer card (fixed toast): untouched except its error-status color class fix.
+- Discord invite section content and the /login Sign up door: copy/routes unchanged.
+- Owner-page repo row internals (language/stars/TVL/model/encryption badge): already dense and
+  honest; only description clamp + row padding changed. Pinned cards untouched.
+- The /repos hub (kiln-repos.js) and the _owner wrapper routing: untouched (regression-checked
+  via load-sim exports).
+- No balance anywhere except the viewer's own surfaces (account strip + own profile) — the
+  store balance belongs to the viewer, so it is never rendered on another user's profile.
 
 ## Class audit (styles-A_fIl0Ci.css, 2026-11-01 night)
 Method: regex extract + Tailwind-escape check (design-round .scratch/class_audit.mjs approach).
