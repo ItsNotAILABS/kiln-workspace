@@ -116,3 +116,22 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
 - Class audit vs styles-A_fIl0Ci.css: all tokens used exist (my-2 caught
   missing by the audit and replaced with my-6 before commit; variant /
   arbitrary-value tokens verified present in escaped form).
+
+## Daemon contract — verified against the REAL daemon child code
+- The daemon lane's branch appeared mid-run: lane-b-oauth @ 1c3478e
+  (~/workspace/.worktrees/kiln-lane-b-oauth). Its httpapi.mjs/accounts.mjs
+  match the locked contract exactly: GET /v1/accounts/oauth/<google|x>/
+  start?return=…, 503 {error:"provider_not_configured", provider},
+  callback 302 → <return>#oauth_handoff=… / #oauth_pending=…, POST
+  handoff/complete → 200 {ok, account, sessionToken, expiresAt}, complete
+  checks owner reservation BEFORE touching the pending record (409 keeps
+  the pending alive), /me account carries oauthLinks:[{provider, subject,
+  linkedAt}].
+- Ephemeral REAL-daemon proof (.scratch/eph_daemon.mjs, startApiServer
+  from the lane-b-oauth worktree, driven by the app's own core client):
+  7/7 PASS — signup+login sanity; /me oauthLinks is an array ([]);
+  preflight google AND x = {configured:false} (no provider creds in env);
+  bogus handoff → 404 "handoff code not found"; bogus complete → 404
+  "pending OAuth sign-up not found".
+- Note: the real /me masks email (e•••@x.io, emailBound) — the panel
+  displays the account record as returned, unchanged behavior.
