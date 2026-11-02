@@ -251,3 +251,46 @@ touched). Results:
   BEFORE deployment: ASSETS (assets), KILN_SWARM_TOKEN (secret_text,
   preserved), ORIGINAL_API_URL (plain_text, tunnel origin); named
   handlers agentManifest/apiIndex/mcpManifest present in the script.
+
+## LANDING — DONE (2026-11-02, landing lane receipt)
+
+- **Branch landed**: `improve/ws-system-ui` now carries Lane D
+  (feature 7c87b2d + docs/evidence picks + landing notes commits).
+  Main-tree HEAD at this receipt's parent: eb521d6.
+- **Deployed**: Worker **v48** `d2a6079c-1609-4ad5-8114-3de29e7e3258`,
+  deployment `eb352e2d-c472-4f2a-a0f7-acb922ee4f9d` at **100%**
+  (deployments API confirms, created 2026-11-02T08:14:20Z; previous
+  was v47 deployment 622a5f8e). Bindings on v48 verified pre-deploy:
+  ASSETS (assets), KILN_SWARM_TOKEN (secret_text, preserved via
+  keep_bindings), ORIGINAL_API_URL (plain_text →
+  https://kiln-original.medinatechlabs.net).
+- **Asset manifest**: 209 files (the README's "194" predates the
+  identity batch); exactly 2 files were new to the asset store —
+  `/.well-known/agent.json` + `/.well-known/mcp.json` — both in the
+  upload (buckets [1,1]).
+- **Public re-probe, first-hand curl, post-deploy** (all 200):
+  - `GET /.well-known/agent.json` → 200 application/json, 4832 B;
+    parses; names the MCP endpoint, the Lane C redeem door
+    (`POST /v1/agent-invites/:token/redeem`), the capabilities
+    pointers (`/v1/capabilities`, `/v1/openapi.json`) and the daemon
+    stdio MCP (kiln-forge).
+  - `GET /.well-known/mcp.json` → 200 JSON, 1455 B; parses;
+    `mcpServers.kiln.url` = https://kiln.pocketnova.app/api/mcp;
+    servers [kiln, kiln-forge].
+  - `GET /api` and `GET /api/` → 200 JSON index (2485 B, identical).
+  - `GET /api/mcp` → 200 JSON, 28 tool names.
+  - `POST /api/mcp` initialize → 200, protocolVersion 2024-11-05,
+    serverInfo kiln 2026.9; tools/list → 200, 28 tools with schemas.
+  - `GET /` → 200 HTML SPA shell (app boots its shell as before).
+- **Foreign WIP preserved as found**: main tree still carries
+  M ops-cloudflare/README.md (the foreign `/api/forge*` one-liner,
+  re-applied on top of the landed README — the Lane D discovery
+  bullet and the foreign line coexist), M public/kiln-account.json,
+  ?? data/. Deploy ran from the clean landing worktree, so none of
+  it shipped.
+- **Deferred (unchanged, per NOTES flags)**: daemon-side items stay
+  flagged, not fixed — agent-invite routes activate at the next
+  Doctor boot; the public `/v1` redeem-proxy decision is still the
+  landing/daemon owner's call (manifest states the status honestly);
+  daemon capabilities stay bearer-gated by design. No daemon or
+  kiln-original restart was performed.
