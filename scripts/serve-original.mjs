@@ -422,6 +422,14 @@ function refreshPublicAccount(owner) {
       // the list is not the whole account, and no reader may present it
       // as one.
       const body = JSON.stringify({ ok: true, owner, repos, ...(failures > 0 ? { partial: true } : {}) });
+      // Never downgrade: a partial re-read must not replace a complete
+      // cached answer. (Observed live: a complete 4-repo cache regressed
+      // to a partial 2-repo body after a background revalidation ran in a
+      // bad daemon window — the partial records were real, but two real
+      // repos vanished from the public list.) The complete body stays;
+      // the next revalidation tries again.
+      const prev = publicAccountCache.get(owner);
+      if (failures > 0 && prev && prev.complete && prev.body) return prev.body;
       publicAccountCache.set(owner, { at: Date.now(), body, complete: failures === 0 });
       return body;
     } catch {
