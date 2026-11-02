@@ -28,22 +28,20 @@ if (mode === "pending") {
   const res = await fetch("http://127.0.0.1:18946/api/forge/v1/accounts/oauth/x/start?return=/login", { redirect: "manual" });
   const loc = res.headers.get("location");
   console.log("PENDING_URL:", loc);
-  await page.goto(loc, { waitUntil: "load", timeout: 60000 });
-  await page.waitForTimeout(6000);
-  let t = await text();
+  await page.goto(loc, { waitUntil: "domcontentloaded", timeout: 60000 });
+  let t = "";
+  for (let i = 0; i < 40; i++) { await page.waitForTimeout(2000); t = await text().catch(()=>""); if (t.includes("Finish your KILN account")) break; }
   console.log("PENDING_FORM:", t.includes("Finish your KILN account"));
   console.log("HASH_SCRUBBED:", await page.evaluate(() => location.hash === ""));
   console.log("SET_SPONSOR:", await setHandle("sponsor"));
   await page.waitForTimeout(500);
   console.log("SUBMIT1:", await submit());
-  await page.waitForTimeout(3000);
-  t = await text();
+  for (let i = 0; i < 20; i++) { await page.waitForTimeout(1500); t = await text(); if (t.includes("is taken")) break; }
   console.log("TAKEN_INLINE:", t.includes("is taken — pick another handle"));
   console.log("SET_NEW:", await setHandle("newdev42"));
   await page.waitForTimeout(500);
   console.log("SUBMIT2:", await submit());
-  await page.waitForTimeout(4000);
-  t = await text();
+  for (let i = 0; i < 20; i++) { await page.waitForTimeout(1500); t = await text(); if (t.includes("Sign-in & wallets")) break; }
   const sess = await page.evaluate(() => localStorage.getItem("kiln.daemon.session.v1"));
   console.log("COMPLETED_SESSION:", !!sess && JSON.parse(sess).account.owner === "newdev42");
   console.log("SIGNED_IN_VIEW:", t.includes("Sign-in & wallets"), "| GOOGLE_ROW:", /Google/.test(t), "| X_LINKED:", t.includes("Linked — can sign in"), "| PROVIDER_NOT_LINKED_PRESENT:", t.includes("Not linked"));
@@ -51,9 +49,9 @@ if (mode === "pending") {
   const res = await fetch("http://127.0.0.1:18946/api/forge/v1/accounts/oauth/google/start?return=/login&sim=known", { redirect: "manual" });
   const loc = res.headers.get("location");
   console.log("HANDOFF_URL:", loc);
-  await page.goto(loc, { waitUntil: "load", timeout: 60000 });
-  await page.waitForTimeout(6000);
-  const t = await text();
+  await page.goto(loc, { waitUntil: "domcontentloaded", timeout: 60000 });
+  let t = "";
+  for (let i = 0; i < 20; i++) { await page.waitForTimeout(1500); t = await text(); if (t.includes("Sign-in & wallets")) break; }
   const sess = await page.evaluate(() => localStorage.getItem("kiln.daemon.session.v1"));
   console.log("HANDOFF_SESSION:", !!sess && JSON.parse(sess).account.owner === "sponsor");
   console.log("HASH_SCRUBBED:", await page.evaluate(() => location.hash === ""));

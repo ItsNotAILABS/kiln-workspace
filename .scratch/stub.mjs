@@ -20,7 +20,7 @@ const srv=http.createServer(async(req,res)=>{
     if(!configured) return send(res,503,{error:"provider_not_configured"});
     const ret=u.searchParams.get("return")||"/login";
     // simulate provider: known user -> handoff, new user -> pending
-    const mode=u.searchParams.get("sim")||"new";
+    const mode=u.searchParams.get("sim")||process.env.STUB_SIM||"new";
     if(mode==="known"){ const code="hc_"+(++n); handoffs.set(code,"sponsor"); res.writeHead(302,{location:`http://127.0.0.1:18947${ret}#oauth_handoff=${code}`}); return res.end(); }
     const tok="pt_"+(++n); pendings.set(tok,{provider:m[1]}); res.writeHead(302,{location:`http://127.0.0.1:18947${ret}#oauth_pending=${tok}`}); return res.end();
   }

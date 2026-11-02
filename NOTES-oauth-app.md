@@ -135,3 +135,57 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
   "pending OAuth sign-up not found".
 - Note: the real /me masks email (e•••@x.io, emailBound) — the panel
   displays the account record as returned, unchanged behavior.
+
+## Gates — final state
+- [x] node --check: kiln-identity-core.js, kiln-identity.js,
+      login-CNvQADsL.js — all OK on final bytes.
+- [x] load-sim RAN CLEAN (node --experimental-vm-modules): core, identity,
+      login chunk, account chunk.
+- [x] class audit vs styles-A_fIl0Ci.css: all tokens present (one catch
+      fixed pre-commit: my-2 → my-6).
+- [x] stub contract harness (app core client): 6/6 PASS.
+- [x] ephemeral REAL daemon (lane-b-oauth worktree code): 7/7 PASS —
+      see the contract section above. This supersedes stub-only proof
+      for every server-driven behavior the app depends on.
+- [x] cold render /login (stub origin, desktop): full text captured —
+      panel Google/X buttons present, NO "Sign-in failed", NO error
+      banner, 0 pageerrors. (Slice-1 proof re-run on final bytes.)
+- [x] cold render pending state (stub origin, desktop): navigating to
+      the daemon's 302 target /login#oauth_pending=<token> renders
+      "Finish your KILN account" with handle + display-name fields and
+      the fragment is scrubbed from the URL (location.hash === "").
+      Proven on three separate runs/tokens.
+- [~] browser click-through completions — PARTIAL, sandbox wall: host
+      load averaged 17–58 for the whole run (other lanes); Chromium
+      repeatedly failed to launch, page loads timed out at 60 s, and
+      page.evaluate calls wedged for minutes at a time. The handle-pick
+      SUBMIT (409 inline → retry → session) and the handoff exchange
+      were therefore NOT captured end-to-end in a browser. They ARE
+      proven at API level with the app's own client against both the
+      contract stub and the real daemon code, and every state the
+      browser must render around them (pending form, signed-out doors,
+      fragment scrub) is browser-proven. Re-run when load settles:
+      .scratch/flow.mjs (MODE=pending|handoff) and the click probe in
+      .scratch/probe.mjs (CLICK_TEXT="Continue with Google"). NOT
+      claimed as browser-proven.
+- [~] Google preflight click probe (browser): same wall — not captured.
+      The preflight itself is proven vs stub AND real daemon
+      ({configured:false} for google and x with no creds configured),
+      and both buttons' handlers are that exact client call.
+- [~] 375px renders: not captured (same Chromium wall). No new
+      viewport-specific code ships: the panel sections reuse the
+      existing responsive classes (sm:flex-row etc. from the current
+      panel), and the pending form is a single-column grid.
+- NOT deployed (coordinator lands this batch as one Worker version).
+
+## Shortfalls / flags for the coordinator
+- Daemon contract differences vs locked: NONE found. The real complete
+  endpoint's reserved-namespace 409 carries a longer message; the panel
+  renders any 409 as "@handle is taken — pick another handle." inline,
+  which is accurate for both 409 kinds.
+- Linking an additional provider while signed in: no daemon door in the
+  contract — flagged in slice 5, not invented.
+- Login chunk message slot is danger-styled (frozen chunk) — flagged in
+  slice 3; panel carries the properly styled honest state.
+- The chunk's legacy better-auth EMAIL form is untouched (out of scope);
+  the daemon doors are the panel's.

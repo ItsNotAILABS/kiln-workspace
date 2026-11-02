@@ -17,8 +17,8 @@ page.on("pageerror", e => errors.push("pageerror: "+String(e&&e.message||e).slic
 try { await page.goto(base+route, { waitUntil:"load", timeout:60000 }); } catch(e){ errors.push("goto: "+String(e.message||e).slice(0,120)); }
 const t0=Date.now(); let text="";
 while(Date.now()-t0<waitMs){ try{ text=await page.evaluate(()=>document.body?document.body.innerText:""); }catch{} if(text && text.trim().length>40 && !process.env.FULL_WAIT) break; await new Promise(r=>setTimeout(r,1500)); }
-if (process.env.CLICK_TEXT) {
-  const clicked = await page.evaluate((t)=>{ const b=[...document.querySelectorAll("button,a")].find(e=>e.textContent.trim().startsWith(t)); if(b){b.click(); return b.textContent.trim();} return null; }, process.env.CLICK_TEXT);
+if (process.env.CLICK_TEXT) { await page.evaluate((n)=>{window.__clickNth=n;}, Number(process.env.CLICK_NTH||0));
+  const clicked = await page.evaluate((t)=>{ const all=[...document.querySelectorAll("button,a")].filter(e=>e.textContent.trim().startsWith(t)); const b=all[Number(window.__clickNth||0)]||all[0]; if(b){b.click(); return b.textContent.trim();} return null; }, process.env.CLICK_TEXT);
   console.log("CLICKED:", clicked);
   await new Promise(r=>setTimeout(r, Number(process.env.CLICK_WAIT||4000)));
   text = await page.evaluate(()=>document.body?document.body.innerText:"").catch(()=>text);
