@@ -344,6 +344,30 @@ export async function decryptSecretBackup(blob, kdf, password) {
   }
 }
 
+/**
+ * Parse the OAuth callback fragment the daemon lands on the return path:
+ *   #oauth_handoff=<code>   — provider identity matched an account
+ *   #oauth_pending=<token>  — new account; a handle still needs picking
+ * Returns { kind: "handoff", code } | { kind: "pending", token } | null.
+ * A fragment (not a query) so the code never reaches a server log or a
+ * referrer; the app exchanges it once and scrubs it from the URL.
+ */
+export function parseOAuthFragment(hash) {
+  const h = String(hash || "").replace(/^#/, "");
+  if (!h) return null;
+  const params = new URLSearchParams(h);
+  const code = params.get("oauth_handoff");
+  if (code) return { kind: "handoff", code };
+  const token = params.get("oauth_pending");
+  if (token) return { kind: "pending", token };
+  return null;
+}
+
+export const OAUTH_NOT_CONFIGURED_TEXT = {
+  google: "Google sign-in isn't switched on yet — the provider app still needs to be created. Sign in with your password or a wallet below: every door opens the same account.",
+  x: "X sign-in isn't switched on yet — the provider app still needs to be created. Sign in with your password or a wallet below: every door opens the same account.",
+};
+
 // ------------------------------------------------------------- API client
 //
 // The browser reaches the daemon through this origin's /api/forge proxy
@@ -450,6 +474,43 @@ export function createIdentityClient({ fetchImpl, getToken, base = "/api/forge/v
         { owner, name, ...(modelLabel ? { modelLabel } : {}) },
         { auth: false },
       ),
+    // OAuth doors (Google / X). The start door is a full-page navigation
+    // on the daemon (GET /accounts/oauth/<provider>/start?return=<path>);
+    // the panel preflights it with fetch first, because a browser
+    // navigation to a not-configured daemon would land on raw JSON.
+    // Preflight resolves { configured: boolean } and never throws for the
+    // 503 provider_not_configured answer — that state is server-driven
+    // copy in the panel, not an error. Other failures DO throw.
+    oauthStartUrl: (provider, returnPath) =>
+      `${base}/accounts/oauth/${encodeURIComponent(provider)}/start?return=${encodeURIComponent(returnPath || "/login")}`,
+    oauthPreflight: async (provider, returnPath) => {
+      const res = await doFetch(
+        `${base}/accounts/oauth/${encodeURIComponent(provider)}/start?return=${encodeURIComponent(returnPath || "/login")}`,
+        { method: "GET", headers: { accept: "application/json" }, cache: "no-store", redirect: "manual" },
+      );
+      if (res.status === 503) {
+        const data = await res.json().catch(() => null);
+        if (data && data.error === "provider_not_configured") return { configured: false };
+        throw new IdentityApiError(503, (data && data.error) || "provider unavailable", data);
+      }
+      // A configured provider answers the start door with a redirect to
+      // the provider (opaqueredirect under redirect:"manual", or a 3xx we
+      // can see). Anything else that is not an error = configured.
+      if (res.ok || res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
+        return { configured: true };
+      }
+      const data = await res.json().catch(() => null);
+      throw new IdentityApiError(res.status, (data && data.error) || `request failed (${res.status})`, data);
+    },
+    // Callback exchanges. Handoff: the daemon matched the provider
+    // identity to an account — exchange the one-shot code for a normal
+    // session (same shape as wallet verify). Complete: a pending token
+    // (new account) + the handle/name the user picked → account + session.
+    // Owner taken → 409, and the pending token SURVIVES (the caller keeps
+    // it and lets the user pick another handle).
+    oauthHandoff: (code) => call("POST", "/accounts/oauth/handoff", { code }, { auth: false }),
+    oauthComplete: ({ pendingToken, owner, name }) =>
+      call("POST", "/accounts/oauth/complete", { pendingToken, owner, name }, { auth: false }),
     me: () => call("GET", "/accounts/me"),
     listWallets: () => call("GET", "/accounts/me/wallets"),
     challenge: (address) => call("POST", "/accounts/me/wallets/challenge", { address }),

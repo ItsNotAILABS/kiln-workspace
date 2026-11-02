@@ -37,6 +37,8 @@ import {
   signInWithPhantomWallet,
   signInWithPhantomSignature,
   isNotYetActive,
+  parseOAuthFragment,
+  OAUTH_NOT_CONFIGURED_TEXT,
   utf8Bytes,
   base58Decode,
   bytesToHex,
@@ -174,6 +176,103 @@ export async function refreshIdentity() {
     }
     return null;
   }
+}
+
+// ------------------------------------------------------------- OAuth doors
+//
+// Google / X sign-in (daemon contract): the start door is a full-page
+// navigation; before navigating, the panel preflights it (a navigation
+// to a not-configured daemon would land on raw 503 JSON). The daemon's
+// callback lands back on the return path with a fragment —
+// #oauth_handoff=<code> (matched account) or #oauth_pending=<token>
+// (new account, handle still to pick). Boot handles the fragment here:
+// handoff exchanges for a normal session (stored exactly like every
+// other door), pending routes the panel into its handle-pick state.
+// The fragment is always scrubbed with history.replaceState.
+
+const OAUTH_PENDING_KEY = "kiln.oauth.pending.v1";
+let oauthPending = (() => {
+  try {
+    return sessionStorage.getItem(OAUTH_PENDING_KEY) || null;
+  } catch {
+    return null;
+  }
+})();
+let oauthNotice = null; // one-shot panel note from a boot-time handoff
+
+export function getOAuthPending() {
+  return oauthPending;
+}
+export function takeOAuthNotice() {
+  const n = oauthNotice;
+  oauthNotice = null;
+  return n;
+}
+function setOAuthPending(token) {
+  oauthPending = token || null;
+  try {
+    if (token) sessionStorage.setItem(OAUTH_PENDING_KEY, token);
+    else sessionStorage.removeItem(OAUTH_PENDING_KEY);
+  } catch {}
+  emit();
+}
+
+function scrubOAuthFragment() {
+  try {
+    const url = new URL(location.href);
+    url.hash = "";
+    history.replaceState(null, "", url.pathname + url.search);
+  } catch {}
+}
+
+let oauthReturnRunning = false;
+export async function processOAuthReturn() {
+  if (oauthReturnRunning) return;
+  let frag = null;
+  try {
+    frag = parseOAuthFragment(location.hash || "");
+  } catch {
+    return;
+  }
+  if (!frag) return;
+  oauthReturnRunning = true;
+  scrubOAuthFragment();
+  try {
+    if (frag.kind === "pending") {
+      setOAuthPending(frag.token);
+      return;
+    }
+    const res = await client.oauthHandoff(frag.code);
+    saveSession({ token: res.sessionToken, expiresAt: res.expiresAt, account: res.account });
+    await refreshIdentity();
+    oauthNotice = "Signed in — your account and linked wallets are restored on this browser.";
+    emit();
+  } catch (e) {
+    // A spent/unknown handoff code is not a form error and NEVER the old
+    // "Sign-in failed" banner: say what happened and steer to the doors.
+    oauthNotice =
+      e instanceof IdentityApiError && e.status === 404
+        ? "That sign-in link has already been used or has expired — start again from a sign-in button below."
+        : "That sign-in couldn't be finished — start again from a sign-in button below.";
+    emit();
+  } finally {
+    oauthReturnRunning = false;
+  }
+}
+
+/** Exchange the pending token + picked handle for the new account. */
+async function completeOAuthSignup({ owner, name }) {
+  if (!oauthPending) throw new Error("This sign-in session has expired — start again from a sign-in button.");
+  const res = await client.oauthComplete({ pendingToken: oauthPending, owner, name });
+  setOAuthPending(null);
+  saveSession({ token: res.sessionToken, expiresAt: res.expiresAt, account: res.account });
+  await refreshIdentity();
+  return res.account;
+}
+
+/** Cancel the handle-pick: drop the pending token, back to the doors. */
+function cancelOAuthSignup() {
+  setOAuthPending(null);
 }
 
 async function signIn(email, password) {
@@ -511,6 +610,9 @@ export function armIdentity() {
     if (session) void refreshIdentity();
   } catch {}
   try {
+    void processOAuthReturn();
+  } catch {}
+  try {
     void processUlReturn();
   } catch {}
   try {
@@ -541,6 +643,8 @@ globalThis.__KILN_IDENTITY = {
   refresh: refreshIdentity,
   signOut,
   processUlReturn,
+  processOAuthReturn,
+  getOAuthPending,
 };
 
 // ------------------------------------------------------------- the panel

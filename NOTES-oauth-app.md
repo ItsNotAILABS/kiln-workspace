@@ -50,3 +50,22 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
 - Navigation (only when preflight is NOT 503 provider_not_configured):
   window.location = the same URL. Return path = current pathname (the panel
   lives on /login and /account; OAuth starts from /login).
+
+## Slice 2 — identity client + boot fragment handling (DONE)
+- kiln-identity-core.js: parseOAuthFragment + OAUTH_NOT_CONFIGURED_TEXT
+  (pure, harness-pinned); client.oauthStartUrl / oauthPreflight (fetch,
+  redirect:"manual"; 503+provider_not_configured → {configured:false},
+  never throws for it) / oauthHandoff / oauthComplete — all on the locked
+  contract paths under the existing base "/api/forge/v1".
+- kiln-identity.js: processOAuthReturn() at armIdentity (module load, every
+  page the panel can land on): handoff → exchange → saveSession (same
+  localStorage kiln.daemon.session.v1 shape as every door) + refreshIdentity;
+  pending → module state + sessionStorage (kiln.oauth.pending.v1, survives a
+  reload during handle-pick); fragment always scrubbed via
+  history.replaceState. Handoff failure → one-shot honest notice, never
+  "Sign-in failed". completeOAuthSignup() keeps the pending token on error
+  (409 owner-taken retries in slice 4's form).
+- Gates: node --check both files OK; load-sim RAN CLEAN (both modules);
+  contract harness vs stub (.scratch/oauth_harness.mjs): 6/6 PASS
+  (fragment parse x3, preflight not-configured, start URL shape, bogus
+  handoff → 404 IdentityApiError).
