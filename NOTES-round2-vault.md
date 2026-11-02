@@ -102,6 +102,45 @@ improve/ws-system-ui @ ee78c97. NO deploy, main tree untouched; coordinator land
 - [x] 1 Cherry-pick receipt wiring af8f0bd — landed as 0e16642, clean (wallet file identical between divergence 9c9f413 and base ee78c97)
 - [x] 2 kiln-vault.js + wallet delegate shim — node --check OK, load sim RAN CLEAN, class audit 75 tokens missing none (grid-cols-3/pt-3 are absent from compiled CSS — original chunk used them dead; vault uses sm:grid-cols-3 + inline padding instead)
 - [x] 3 Renames (AppShell bottom-bar + palette labels, kiln-repos hub button) — load sim RAN CLEAN on all three edited files
-- [ ] 4 Gates: node --check, class audit, load sim, cold renders /wallet +
+- [x] 4 Gates — see Gates section below (all pass)
   / desktop + 375px 0 pageerrors, seeded click probes (Details, transfers,
   Mint, ledger filters, receipt click-through, bottom-bar label)
+
+## Gates — ALL PASS (local origin :8946 from this worktree, serve-original)
+- `node --check`: kiln-vault.js, wallet-CTr0sTgn.js, AppShell, kiln-repos OK.
+- Load sim (.scratch/loadsim.mjs): wallet chunk + kiln-vault + AppShell +
+  kiln-repos full graphs **RAN CLEAN**.
+- Class audit: kiln-vault.js 75 tokens, **missing: none**. (The original
+  chunk's `grid-cols-3`/`pt-3` are absent from the compiled CSS — dead in
+  the old page too; the Vault uses `sm:grid-cols-3` + inline padding.)
+- Unseeded cold renders (render_gate): /wallet + / on desktop 1280 AND
+  mobile 375 — signed-out Vault renders ("Vault — One vault for everything
+  KILN holds for you…"), 0 pageerrors, no #130 / error boundary. Only
+  console entries: sandbox ERR_TUNNEL resource failures (environmental).
+- Seeded probe (.scratch/vault_probe.mjs; seed = main 2,500 + agent 25 +
+  model 40 KLN, a wallet-less model, 4 ledger txs of every actor kind;
+  companions route-blocked per the receipt lane's harness precedent):
+  - Desktop + mobile render checks **13/13**: h1 Vault, **Vault total
+    2,565 KLN** (= 2,500 + 25 + 40, the old "All wallets" sum), main /
+    agent / model figures, TRANSFER HUB chip, Settled activity, agent +
+    model sections, Mint wallet + NO WALLET YET, ledger search, repos,
+    settled receipt link.
+  - Details probe: agent Details expands → address, Fund from main /
+    Sweep to main present (disabled without the forge companion — the
+    honest state; title says why), NO agent↔agent control, Details tx
+    rows carry receipt links.
+  - Receipt click-through: Settled row → /chain/<hash> "Transaction
+    receipt" with the tx memo. 0 pageerrors throughout.
+  - Ledger filters (scoped to the ledger section): Models shows only the
+    model tx, Agents only the agent-actor tx, All restores both.
+  - Mobile bottom bar: /wallet tab labels = ["", "Vault"] — **Vault tab
+    present, no Wallet tab**; bar renders on / too (render gate above).
+
+## Landing notes for the coordinator
+- Commits on round2-vault: c61249b notes, 0e16642 receipt cherry-pick
+  (af8f0bd from wallet-receipt-links — if that branch also lands, this
+  commit is the same change to the same file and will conflict/duplicate;
+  drop one), 78acaa3 the Vault, d097024 renames, this notes commit.
+- The wallet-receipt branch's NOTES file was not cherry-picked; its gate
+  evidence lives in that worktree.
+- .scratch/ (harness + probe logs) is untracked, left in the worktree.
