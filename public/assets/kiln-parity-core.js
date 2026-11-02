@@ -123,6 +123,15 @@ export function createParityClient({ fetchImpl, getToken, base = "/api/forge/v1"
         ...(Array.isArray(repos) && repos.length ? { repos } : {}),
       }),
 
+    updateWorkspace: (id, patch) => call("PATCH", `/workspaces/${encodeURIComponent(id)}`, patch),
+    // Workspace invites by email (owner/admin): create returns the
+    // plaintext token exactly once; list answers masked only.
+    listWorkspaceInvites: (id) => call("GET", `/workspaces/${encodeURIComponent(id)}/invites`),
+    createWorkspaceInvite: (id, { email, role }) =>
+      call("POST", `/workspaces/${encodeURIComponent(id)}/invites`, { email, role }),
+    revokeWorkspaceInvite: (id, inviteId) =>
+      call("DELETE", `/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}`),
+
     // ---- repo details: read (G8 CI + visibility state), write (G18)
     getRepoDetails: (owner, repo) =>
       call("GET", `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`),

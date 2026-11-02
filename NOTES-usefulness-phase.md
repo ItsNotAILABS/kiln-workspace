@@ -45,6 +45,30 @@ Must-lands: G1 + G18, gated before G8/G17.
   Create sheet: kiln-create.js DOORS. Nav: AppShell "More" dropdown array +
   command-palette P array are clean one-line slots for Workspaces.
 
+## RECONCILIATION (2026-11-02, landing)
+A parallel parity lane landed its own G1 + G18 + G8 on improve/ws-system-ui
+(47d324c + ce896b2, on top of Lane D v48) while this lane worked, and
+deployed them. Rather than land duplicates, this batch reconciled:
+- G17 cherry-picked clean onto the merged tip (8278741 in the landing
+  worktree; only the NOTES file conflicted, resolved by keeping it).
+- G1 completion in the parity module: detail Manage section (owner
+  add/remove repos via PATCH; owner/admin invite-by-email with the
+  shown-once token + honest queued-mail copy; masked invite list +
+  revoke) + parity-core client verbs. Parity's detail was read-only.
+- G18 completion in kiln-repo-meta.js: Pages designation (enabled +
+  branch + path + live-site link) and paper designation rows join
+  visibility/description/topics in the owner Settings panel, same
+  details PATCH. Parity's panel had only desc/topics/visibility.
+- This lane's standalone kiln-workspaces.js/kiln-settings.js (f13147f,
+  37e19a2 on usefulness-phase) are SUPERSEDED by the parity modules and
+  were not landed; they remain on the branch for the record.
+- Proofs from this lane that stand: ephemeral session contract 27/27
+  (workspace lifecycle + invite loop + details flips, .scratch/
+  eph_proof.mjs); ephemeral-origin signed-in renders of /workspaces
+  list (desktop+375) and detail (375: repos, owner role, invite panel)
+  0 pageerrors; staged-origin /pages bytes == /papers bytes incl. PDF
+  sha256 e8a995ee (the published snapshot).
+
 ## Pieces
 - [x] G1 kiln-workspaces.js + _owner wiring + Create door + nav entries — f13147f (load-sim RAN CLEAN incl. _owner graph; class tokens match kiln-agents idiom)
 - [x] G18+G8 kiln-settings.js (settings panel + CI chip) + _repo mount (load-sim RAN CLEAN)

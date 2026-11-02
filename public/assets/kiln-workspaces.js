@@ -85,11 +85,214 @@ function section(title, children, sub, eyebrow) {
   });
 }
 
+
+// ------------------------------------------------------------ manage
+//
+// Completion (usefulness phase): the parity batch shipped the read
+// surface; the daemon also supports owner PATCH (add/remove repos) and
+// owner/admin email invites from a session, so the detail carries the
+// doors too — exactly what the routes support, nothing faked. The
+// invite token is shown exactly once (the inviter's out-of-band copy);
+// the invite email itself queues in the mail outbox until a transport
+// is configured, and the copy below says so.
+
+function WorkspaceManage({ ws, repos, mine, canManage, onChanged }) {
+  const [repoInput, setRepoInput] = R.useState("");
+  const [email, setEmail] = R.useState("");
+  const [role, setRole] = R.useState("member");
+  const [invites, setInvites] = R.useState(null);
+  const [once, setOnce] = R.useState(null);
+  const [busy, setBusy] = R.useState("");
+  const [err, setErr] = R.useState("");
+  const [note, setNote] = R.useState("");
+
+  const loadInvites = R.useCallback(async () => {
+    if (!canManage) return;
+    try {
+      const res = await parity.listWorkspaceInvites(ws.id);
+      setInvites(Array.isArray(res?.invites) ? res.invites : []);
+    } catch {
+      setInvites([]);
+    }
+  }, [ws.id, canManage]);
+
+  R.useEffect(() => {
+    void loadInvites();
+  }, [loadInvites]);
+
+  const patch = async (body, label, okText) => {
+    setBusy(label);
+    setErr("");
+    setNote("");
+    try {
+      await parity.updateWorkspace(ws.id, body);
+      setRepoInput("");
+      if (okText) setNote(okText);
+      if (onChanged) onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const sendInvite = async () => {
+    setBusy("invite");
+    setErr("");
+    setNote("");
+    setOnce(null);
+    try {
+      const res = await parity.createWorkspaceInvite(ws.id, { email: email.trim(), role });
+      setEmail("");
+      setOnce({ token: res?.token || "", delivery: res?.delivery || "" });
+      await loadInvites();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Invite failed");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const children = [];
+  if (mine) {
+    children.push(
+      j.jsxs("form", {
+        key: "addrepo",
+        className: "mt-3 flex flex-col gap-2 sm:flex-row",
+        onSubmit: (e) => {
+          e.preventDefault();
+          const v = repoInput.trim();
+          if (v) void patch({ addRepos: [v] }, "add", "Repo added — the list above is read back from the forge.");
+        },
+        children: [
+          j.jsx("input", {
+            key: "in",
+            className: "input min-w-0 flex-1 font-mono",
+            value: repoInput,
+            onChange: (e) => setRepoInput(e.target.value),
+            placeholder: "owner/repo-name (must already exist on the forge)",
+          }),
+          j.jsx("button", { key: "go", type: "submit", className: "btn min-h-11 shrink-0 px-3", disabled: busy === "add" || !repoInput.trim(), children: busy === "add" ? "Adding…" : "Add repo" }),
+        ],
+      }),
+    );
+    if (repos.length) {
+      children.push(
+        j.jsx("ul", {
+          key: "rmrepos",
+          className: "mt-3 divide-y divide-border rounded-lg border border-border",
+          children: repos.map((entry) =>
+            j.jsxs("li", {
+              className: "flex flex-wrap items-center gap-2 px-3 py-2 text-sm",
+              children: [
+                j.jsx("span", { key: "r", className: "font-mono", children: entry.repo }),
+                j.jsx("button", {
+                  key: "rm",
+                  type: "button",
+                  className: "btn ml-auto min-h-11 px-3",
+                  disabled: busy === "rm",
+                  onClick: () => void patch({ removeRepos: [entry.repo] }, "rm", "Repo removed — the list above is read back from the forge."),
+                  children: "Remove",
+                }),
+              ],
+            }, entry.repo),
+          ),
+        }),
+      );
+    }
+  }
+  if (canManage) {
+    children.push(
+      j.jsx("p", {
+        key: "inv-note",
+        className: "mt-5 border-t border-border pt-4 text-sm leading-relaxed text-muted",
+        children:
+          "Invite by email: the invite joins one account to this workspace with the role you pick. The invite email queues in the forge's mail outbox and sends when a mail transport is configured — until then, hand the invite token to the person yourself: it works once, for 7 days, accepted from their signed-in account.",
+      }),
+      j.jsxs("form", {
+        key: "invform",
+        className: "mt-3 flex flex-col gap-2 sm:flex-row",
+        onSubmit: (e) => {
+          e.preventDefault();
+          void sendInvite();
+        },
+        children: [
+          j.jsx("input", { key: "em", className: "input min-w-0 flex-1", type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "person@example.com" }),
+          j.jsxs("select", {
+            key: "ro",
+            className: "input",
+            value: role,
+            onChange: (e) => setRole(e.target.value),
+            children: [
+              j.jsx("option", { key: "m", value: "member", children: "Member — can read" }),
+              j.jsx("option", { key: "a", value: "admin", children: "Admin — reads + invites" }),
+            ],
+          }),
+          j.jsx("button", { key: "go", type: "submit", className: "btn-primary btn min-h-11 shrink-0 px-3", disabled: busy === "invite" || !email.trim(), children: busy === "invite" ? "Inviting…" : "Send invite" }),
+        ],
+      }),
+    );
+    if (once) {
+      children.push(
+        j.jsxs("div", {
+          key: "once",
+          className: "mt-3 rounded-lg border border-border bg-bg p-4",
+          children: [
+            j.jsx("p", { className: "text-xs uppercase tracking-[0.14em] text-muted", children: "Invite token — shown once" }),
+            j.jsx("p", { className: "mt-2 break-all font-mono text-xs leading-relaxed", children: once.token }),
+            once.delivery ? j.jsx("p", { className: "mt-2 text-xs leading-relaxed text-muted", children: once.delivery }) : null,
+          ],
+        }),
+      );
+    }
+    if (invites && invites.length) {
+      children.push(
+        j.jsx("ul", {
+          key: "invlist",
+          className: "mt-3 divide-y divide-border rounded-lg border border-border",
+          children: invites.map((inv) =>
+            j.jsxs("li", {
+              className: "flex flex-wrap items-center gap-2 px-3 py-2 text-sm",
+              children: [
+                j.jsx("span", { key: "e", className: "font-mono text-xs", children: inv.email || "" }),
+                j.jsx("span", { key: "r", className: "chip", children: inv.role }),
+                j.jsx("span", { key: "s", className: "chip", children: inv.status }),
+                inv.status === "pending"
+                  ? j.jsx("button", {
+                      key: "rev",
+                      type: "button",
+                      className: "btn ml-auto min-h-11 px-3",
+                      onClick: async () => {
+                        setErr("");
+                        try {
+                          await parity.revokeWorkspaceInvite(ws.id, inv.id);
+                          await loadInvites();
+                        } catch (e2) {
+                          setErr(e2 instanceof Error ? e2.message : "Revoke failed");
+                        }
+                      },
+                      children: "Revoke",
+                    })
+                  : null,
+              ],
+            }, inv.id),
+          ),
+        }),
+      );
+    }
+  }
+  if (note) children.push(j.jsx("p", { key: "note", className: "mt-3 text-sm text-seal", children: note }));
+  if (err) children.push(j.jsx("p", { key: "err", className: "mt-3 text-sm text-red-500", children: err }));
+
+  return section("Manage", children, mine ? "Owner doors: member repos and email invites. Workspace edits are owner-only on the forge; admins manage invites." : "Admin doors: email invites for this workspace.", "Doors");
+}
+
 // ------------------------------------------------------------ detail
 
 function WorkspaceDetail({ id, me, onBack }) {
   const [status, setStatus] = R.useState(undefined); // undefined = loading, null = failed
   const [chips, setChips] = R.useState({}); // repoRef -> verdict
+  const [refreshNonce, setRefreshNonce] = R.useState(0);
   const [err, setErr] = R.useState("");
 
   R.useEffect(() => {
@@ -130,7 +333,7 @@ function WorkspaceDetail({ id, me, onBack }) {
     return () => {
       live = false;
     };
-  }, [id]);
+  }, [id, refreshNonce]);
 
   if (status === undefined) return j.jsx("p", { className: "mt-6 text-sm text-muted", children: "Reading the workspace…" });
   if (status === null)
@@ -238,7 +441,7 @@ function WorkspaceDetail({ id, me, onBack }) {
             ? null
             : j.jsx("p", { className: "mt-3 text-sm text-muted", children: "No members yet — the owner works alone here for now. Members join through email invites sent to their address; this list is the read view of who is in." }),
         ],
-        "The owner plus every account that joined by email invite, with its role. Read-only here: invites are managed through the workspace's invite doors.",
+        "The owner plus every account that joined by email invite, with its role. Owners and admins invite from the Manage section below.",
         "Who is in",
       ),
 
@@ -268,6 +471,17 @@ function WorkspaceDetail({ id, me, onBack }) {
             undefined,
             "Sites",
           )
+        : null,
+
+      mine || (me && members.some((m) => m.owner === me.owner && m.role === "admin"))
+        ? j.jsx(WorkspaceManage, {
+            key: "manage",
+            ws,
+            repos,
+            mine: !!mine,
+            canManage: true,
+            onChanged: () => setRefreshNonce((n) => n + 1),
+          })
         : null,
     ],
   });

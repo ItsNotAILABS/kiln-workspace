@@ -29,6 +29,13 @@
  * says what public means; flipping back to private is one click.
  * Non-owners and signed-out visitors see the state, never the form.
  *
+ * Completion (usefulness phase): the settings panel also carries the
+ * repo's Pages designation (enabled + branch + path) and paper
+ * designation (enabled) over the same details PATCH — the fields
+ * kiln-papers.js already designates through; this is the settings-door
+ * view of the same record, not a second flow. PATCH answers carry the
+ * daemon's full post-write details, which is what the panel re-renders.
+ *
  * If the details read fails (a private repo signed out, the forge
  * unreachable), the bar renders nothing: the frozen repo page already
  * carries its own states, and a meta strip that cannot read the truth
@@ -95,6 +102,8 @@ export function KilnRepoMetaBar() {
   const [err, setErr] = R.useState("");
   const [note, setNote] = R.useState("");
   const [armPublic, setArmPublic] = R.useState(false);
+  const [pagesBranch, setPagesBranch] = R.useState("");
+  const [pagesPath, setPagesPath] = R.useState("");
 
   // The frozen router navigates client-side; poll the path cheaply so
   // the bar follows SPA navigation (and disappears off repo pages).
@@ -155,6 +164,8 @@ export function KilnRepoMetaBar() {
   const openSettings = () => {
     setDesc(details.description || "");
     setTopicsText((details.topics || []).join(", "));
+    setPagesBranch((details.pages && details.pages.branch) || "");
+    setPagesPath((details.pages && details.pages.path) || "");
     setErr("");
     setNote("");
     setArmPublic(false);
@@ -314,6 +325,74 @@ export function KilnRepoMetaBar() {
                     },
                     children: vis === "public" ? "Make private" : "Make public",
                   }),
+            ],
+          }),
+          j.jsxs("div", {
+            className: "mt-2 border-t border-border pt-4",
+            children: [
+              j.jsx("p", { className: "text-xs uppercase tracking-[0.14em] text-muted", children: "KILN Pages" }),
+              j.jsx("p", {
+                className: "mt-2 text-sm leading-relaxed text-muted",
+                children:
+                  details.pages && details.pages.enabled
+                    ? `Pages is on: this repo serves as a site at /pages/${where.owner}/${where.repo}/ from ${details.pages.branch ? `branch ${details.pages.branch}` : "the default branch"}${details.pages.path ? `, path ${details.pages.path}` : ", at the repo root"}. The visibility law above applies to the site too — a private repo's site answers sign-in required.`
+                    : "Pages is off. Turning it on serves this repo's current ref as a site at /pages/<owner>/<repo>/ — the designation the forge's Pages server reads. The visibility law above applies to the site too.",
+              }),
+              j.jsxs("div", {
+                className: "mt-3 flex flex-wrap items-center gap-2",
+                children: [
+                  j.jsx("button", {
+                    type: "button",
+                    className: "btn min-h-11 px-3",
+                    disabled: busy,
+                    onClick: () =>
+                      void save(
+                        { pages: { enabled: !(details.pages && details.pages.enabled), branch: pagesBranch, path: pagesPath } },
+                        details.pages && details.pages.enabled ? "Pages is off — the site no longer serves." : "Pages is on — the site serves from this repo.",
+                      ),
+                    children: details.pages && details.pages.enabled ? "Turn Pages off" : "Turn Pages on",
+                  }),
+                  details.pages && details.pages.enabled
+                    ? j.jsx("a", { className: "text-sm text-seal hover:underline", href: `/pages/${where.owner}/${where.repo}/`, children: "Open the live site" })
+                    : null,
+                ],
+              }),
+              j.jsxs("form", {
+                className: "mt-3 flex flex-col gap-2 sm:flex-row",
+                onSubmit: (e) => {
+                  e.preventDefault();
+                  void save({ pages: { branch: pagesBranch, path: pagesPath } }, "Pages source saved.");
+                },
+                children: [
+                  j.jsx("input", { className: "input min-w-0 flex-1 font-mono", value: pagesBranch, onChange: (e) => setPagesBranch(e.target.value), placeholder: "branch (blank = default branch)", autoCapitalize: "none", autoCorrect: "off" }),
+                  j.jsx("input", { className: "input min-w-0 flex-1 font-mono", value: pagesPath, onChange: (e) => setPagesPath(e.target.value), placeholder: "path (blank = root, e.g. site)", autoCapitalize: "none", autoCorrect: "off" }),
+                  j.jsx("button", { type: "submit", className: "btn min-h-11 shrink-0 px-3", disabled: busy, children: "Save source" }),
+                ],
+              }),
+            ],
+          }),
+          j.jsxs("div", {
+            className: "mt-2 border-t border-border pt-4",
+            children: [
+              j.jsx("p", { className: "text-xs uppercase tracking-[0.14em] text-muted", children: "Paper designation" }),
+              j.jsx("p", {
+                className: "mt-2 text-sm leading-relaxed text-muted",
+                children:
+                  details.paper && details.paper.enabled
+                    ? "This repo is designated as a paper. Releases register versions under its KILN ID in the Papers Studio."
+                    : "Not designated as a paper. Designation is by manifest: the forge requires a valid paper.json at the repo root on the default branch and refuses without one. Releases and the registry live in the Papers Studio.",
+              }),
+              j.jsx("button", {
+                type: "button",
+                className: "btn mt-3 min-h-11 px-3",
+                disabled: busy,
+                onClick: () =>
+                  void save(
+                    { paper: { enabled: !(details.paper && details.paper.enabled) } },
+                    details.paper && details.paper.enabled ? "Paper designation removed." : "Designated as a paper — releases register under its KILN ID.",
+                  ),
+                children: details.paper && details.paper.enabled ? "Remove designation" : "Designate as a paper",
+              }),
             ],
           }),
         ],
