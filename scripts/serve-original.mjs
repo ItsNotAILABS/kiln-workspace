@@ -408,7 +408,8 @@ const publicAccountInFlight = new Map();
 // One deduped refresh per owner. Resolves to the fresh body, or null when
 // the read failed outright (listing unreachable, or every named repo's
 // read failed with nothing to show). A partial read (some repos landed)
-// still replaces the cache — those records are real — but is marked
+// fills an empty or partial cache — those records are real — but never
+// replaces a complete cached answer (see below), and is marked
 // incomplete so the next request revalidates instead of treating the
 // partial list as the whole truth for a full TTL.
 function refreshPublicAccount(owner) {
