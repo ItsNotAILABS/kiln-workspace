@@ -672,7 +672,7 @@ export function KilnReposHub() {
                         className: "mt-4 flex flex-wrap gap-2",
                         children: [
                           j.jsx(Link, { key: "p", to: `/${wallet.handle}`, className: "btn h-8", children: "Profile page" }),
-                          j.jsx(Link, { key: "w", to: "/wallet", className: "btn h-8", children: "Wallet" }),
+                          j.jsx(Link, { key: "w", to: "/wallet", className: "btn h-8", children: "Vault" }),
                         ],
                       }),
                     ],
