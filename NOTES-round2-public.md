@@ -1,7 +1,7 @@
 # Round 2 — Piece 1: "Nothing shows public" (/repos All repos)
 
 Branch: round2-public (off improve/ws-system-ui @ ee78c97)
-Status: DIAGNOSING
+Status: ROOT CAUSE PROVEN (bug reproduced cold through the live domain) — FIXING
 
 ## Bug
 Signed out, phone, /repos → "All repos": "Reading the forge…" then
@@ -40,8 +40,71 @@ auro/kiln-agent-kit, auro/defi-kit, auro/blockchain-kit, auro/marketplace-paper.
     visibility "public".
   - So the daemon itself can be fast; the origin's per-repo full-record
     compute (tree walk + contents) is the expensive layer on top.
-- Local origin (:8931) cold auro read: TIMING PENDING (call in flight >12 s).
-- Live domain (kiln.pocketnova.app) cold read: PENDING.
+- Local origin (:8931) COLD auro read (cache expired, load ~20):
+  **200 in 74.3 s, 411,038 bytes, all 4 repos present**
+  (auro/blockchain-kit, defi-kit, kiln-agent-kit, marketplace-paper).
+  itsnotailabs cold read: 200 in 0.27 s, truly empty (no repos in anon listing).
+- **Live domain COLD auro read — THE BUG, REPRODUCED (load ~20+):**
+  `GET https://kiln.pocketnova.app/api/kiln/public/accounts/auro/repos`
+  → **200 in 21.2 s with `{"ok":true,"owner":"auro","repos":[]}`** — EMPTY.
+  21 s ≈ each repo's details call burning the 8 s timeout + 0.4 s pause +
+  8 s retry in parallel, every repo dropped, empty answer. That failure-empty
+  is then cached by `publicAccountBody` for 30 s and served as truth.
+  (Daemon details calls measured immediately after were themselves hanging
+  >100 s for the 4-repo loop under this load — the daemon slows drastically,
+  and the public reader's 8 s budget is far below the daemon's real latency;
+  the file's own account-doc reader uses 25 s because "a few repos answer
+  in ~20 s".)
+- Design-round scratch corroborates intermittency on the local path:
+  probe-p4-repos.txt waited 150 s → "No public repositories answered";
+  probe-p4-repos2.txt got all rows in 24 s; mobile probe in 20 s.
+
+## ROOT CAUSE (all three layers compound)
+1. **Origin timeout budget too small for the daemon under load.** Public
+   daemon calls abort at 8 s (+1 retry). Daemon per-repo latency routinely
+   exceeds that under this box's load (10–40+), so repos get dropped
+   silently; when all drop, the account reads as empty.
+2. **Origin caches and mislabels failure.** A compute that failed (fully or
+   per-repo) produces the same 200 `{repos: []}` as a truly-empty account,
+   and `publicAccountBody` caches ANY result — including failure-empty —
+   for 30 s. Cold path also has no stale-while-revalidate and no in-flight
+   dedupe, so every cold phone pays the full 20–75 s compute (or a
+   Cloudflare proxy timeout past ~100 s) with nothing to fall back on.
+3. **Hub conflates failure with empty and blocks on the slowest seed.**
+   Sequential seed lookups, one `setPubRepos` at the very end, no fetch
+   timeout, no store-known fallback, and a single empty message that
+   claims a live read happened. `lookupPublicAccount` also treats any
+   200-with-empty (and even a non-JSON error page, via `res.json().catch`)
+   as a successful empty result.
+
+## FIX PLAN (evidence-mapped)
+- `scripts/serve-original.mjs` **[ACTIVATION: needs kiln-original.service
+  restart — coordinator sequences; do NOT restart from this lane]**:
+  - `PUBLIC_FETCH_TIMEOUT_MS` 8000 → 25000 (same budget as the account-doc
+    reader, whose comment documents ~20 s daemon answers).
+  - `computePublicAccount` reports per-repo failure count + listed count.
+  - `publicAccountBody` rewritten: stale-while-revalidate (serve last good
+    body instantly, refresh in background, in-flight deduped — the
+    accountDocBody pattern); cache only real results (complete, partial
+    with repos, or verified-empty); a total failure with nothing cached
+    answers `{…, repos: [], degraded: true}` and is NEVER cached.
+- `public/assets/kiln-public.js`:
+  - `lookupPublicAccount`: 60 s fetch timeout, `res.ok` check, JSON-parse
+    failure and `degraded:true` bodies return `{ok:false, …}` instead of a
+    fake successful empty.
+  - `searchPublic`: non-OK / degraded answers throw, so callers show their
+    "did not answer" state instead of "no matches".
+- `public/assets/kiln-repos.js` (hub):
+  - Seed lookups run concurrently and merge into the list **per owner as
+    each lands** (auro's rows no longer wait for itsnotailabs or vice versa).
+  - Initial display seeds from store-held public records
+    (`forgePublic === true` — real records previously merged from this same
+    public API; nothing invented), live results overwrite by id.
+  - Distinct states: loading / forge-unreachable (with Retry) /
+    last-known-shown note / truly-empty (only when every lookup succeeded
+    and returned nothing).
+  - Rows normalize `commitCount`/`fileCount` → the `commitsCount`/
+    `filesCount` fields RepoRow prints (they never rendered before).
 
 ## Activation flags
 - (pending) If the fix touches `scripts/serve-original.mjs`, landing needs a
