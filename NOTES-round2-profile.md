@@ -11,7 +11,17 @@ NOT deployed — coordinator lands commits.
 
 ## Step log
 - [x] 1 Inventory both surfaces cold + class audit (below; renders in .scratch/before-*.txt)
-- [ ] 2 Build: kiln-identity.js presentation pass
+- [x] 2 Build: kiln-identity.js presentation pass — DONE: per-section eyebrows (Account / New here /
+  Wallet recovery / Signature-linked / Encrypted backup / Advanced; section() gained a 4th param,
+  default unchanged); err/note are now bordered banners and err uses text-red-500 (exists) instead
+  of text-red-400 (absent — also fixed in the backup-offer status line); panel header is composed
+  when signed in (initials avatar from account name/owner, mono seal handle, email, real chips:
+  linked-wallet count + backup on file/no backup yet + this-browser link state, all gated on the
+  loaded /me snapshot so nothing renders from unknown state) and carries Sign out on the identical
+  handler — the duplicate "Signed in" section is gone; linked-wallet rows py-2→py-3 with the full
+  address on title; step-1 wallet box p-3→p-4 + bg-bg framing; section subs gain leading-relaxed.
+  NO handler/crypto/session/copy changes; kiln-identity-core.js untouched.
+  Gates: node --check OK · class audit 66 tokens, none missing · load-sim RAN CLEAN (exports intact).
 - [ ] 3 Build: account chunk surgical pass
 - [ ] 4 Build: _owner chunk surgical pass
 - [ ] 5 Gates: node --check, class audit, load-sim, cold renders desktop+375px, identity click-probe

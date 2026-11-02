@@ -282,7 +282,7 @@ function showBackupOffer(wallet) {
           setTimeout(close, 4000);
         } catch (e) {
           status.textContent = e instanceof Error ? e.message : "Backup failed";
-          status.className = "mt-2 text-sm text-red-400";
+          status.className = "mt-2 text-sm text-red-500";
           go.disabled = false;
         }
       });
@@ -497,19 +497,35 @@ export function KilnIdentityPanel() {
       setImportSecret("");
     }, "Wallet installed on this browser from its secret.");
 
-  const section = (title, children, sub) =>
+  const section = (title, children, sub, eyebrow) =>
     j.jsxs("section", {
       className: "mt-6 rounded-xl border border-border bg-surface p-5",
       children: [
-        j.jsx("p", { className: "text-[10px] uppercase tracking-[0.16em] text-muted", children: "Kiln account" }),
+        j.jsx("p", { className: "text-[10px] uppercase tracking-[0.16em] text-muted", children: eyebrow || "Kiln account" }),
         j.jsx("h2", { className: "mt-1 font-display text-2xl tracking-tight", children: title }),
-        sub ? j.jsx("p", { className: "mt-2 text-sm text-muted", children: sub }) : null,
+        sub ? j.jsx("p", { className: "mt-2 text-sm leading-relaxed text-muted", children: sub }) : null,
         ...children,
       ],
     });
 
   const children = [];
 
+  // Composed identity header: when signed in, the account itself is the
+  // header — avatar initials, handle, email, and the real wallet/backup
+  // state as chips — with Sign out on the same handler the old "Signed in"
+  // section carried. Signed out it stays the plain explainer.
+  const headerChips = [];
+  if (acct && me) {
+    headerChips.push(
+      j.jsx("span", { key: "w", className: "chip", children: wallets.length === 1 ? "1 linked wallet" : `${wallets.length} linked wallets` }),
+      me.hasWalletBackup
+        ? j.jsx("span", { key: "b", className: "chip text-seal", children: "Backup on file" })
+        : j.jsx("span", { key: "b", className: "chip", children: "No backup yet" }),
+    );
+    if (wallet && localLinked) headerChips.push(j.jsx("span", { key: "l", className: "chip text-seal", children: "This browser's wallet is linked" }));
+    else if (wallet) headerChips.push(j.jsx("span", { key: "l", className: "chip", children: "Wallet in this browser — not linked" }));
+    else if (restoreCandidate) headerChips.push(j.jsx("span", { key: "l", className: "chip", children: "Wallet ready to restore below" }));
+  }
   children.push(
     j.jsxs("div", {
       className: "mt-10",
@@ -517,10 +533,37 @@ export function KilnIdentityPanel() {
         j.jsx("p", { className: "text-[11px] uppercase tracking-[0.2em] text-muted", children: "Identity & wallets" }),
         j.jsx("h2", { className: "mt-1 font-display text-3xl tracking-tight", children: "Your Kiln account" }),
         j.jsx("p", {
-          className: "mt-2 max-w-2xl text-sm text-muted",
+          className: "mt-2 max-w-2xl text-sm leading-relaxed text-muted",
           children:
             "Your wallet key lives in this browser. A Kiln account ties it to you: link wallets by signature, store an encrypted backup, and signing in on any browser restores the same wallet — no new key, no new account.",
         }),
+        acct
+          ? j.jsxs("div", {
+              className: "mt-4 flex flex-wrap items-center gap-3",
+              children: [
+                j.jsx("div", {
+                  className: "flex size-10 items-center justify-center rounded-xl border border-border bg-surface font-display text-lg font-semibold",
+                  children: (acct.name || acct.owner || "?").split(/[\s-]+/).filter(Boolean).slice(0, 2).map((w) => w.slice(0, 1).toUpperCase()).join("") || "?",
+                }),
+                j.jsxs("div", {
+                  className: "min-w-0",
+                  children: [
+                    j.jsx("p", { className: "font-mono text-sm text-seal", children: acct.owner }),
+                    acct.email ? j.jsx("p", { className: "truncate text-xs text-muted", children: acct.email }) : null,
+                  ],
+                }),
+                headerChips.length ? j.jsx("div", { className: "flex flex-wrap gap-2", children: headerChips }) : null,
+                j.jsx("span", { className: "flex-1" }),
+                j.jsx("button", {
+                  type: "button",
+                  className: "btn min-h-11",
+                  disabled: busy,
+                  onClick: () => void run(async () => signOut(), "Signed out on this browser."),
+                  children: "Sign out",
+                }),
+              ],
+            })
+          : null,
       ],
     }),
   );
@@ -535,8 +578,8 @@ export function KilnIdentityPanel() {
     );
   }
 
-  if (err) children.push(j.jsx("p", { className: "mt-4 text-sm text-red-400", children: err }));
-  if (note) children.push(j.jsx("p", { className: "mt-4 text-sm text-seal", children: note }));
+  if (err) children.push(j.jsx("p", { className: "mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-red-500", children: err }));
+  if (note) children.push(j.jsx("p", { className: "mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-seal", children: note }));
 
   if (!snap.session) {
     // ---- sign in
@@ -558,6 +601,7 @@ export function KilnIdentityPanel() {
           }),
         ],
         "Sign in with your forge account. Your profile and linked wallets load here, and a backed-up wallet can be restored onto this browser.",
+        "Account",
       ),
     );
     // ---- create account, wallet first
@@ -566,7 +610,7 @@ export function KilnIdentityPanel() {
         "Create your account — wallet first",
         [
           j.jsxs("div", {
-            className: "mt-4 rounded-lg border border-border p-3",
+            className: "mt-4 rounded-lg border border-border bg-bg p-4",
             children: [
               j.jsx("p", { className: "text-xs uppercase tracking-[0.14em] text-muted", children: "Step 1 · Your wallet" }),
               wallet
@@ -613,33 +657,13 @@ export function KilnIdentityPanel() {
           }),
         ],
         "Step 2 is the account. The wallet from step 1 links to it by signature — it becomes your identity on every browser, not just this one.",
+        "New here",
       ),
     );
   } else {
-    // ---- signed in: account summary
-    children.push(
-      section("Signed in", [
-        j.jsxs("div", {
-          className: "mt-3 flex flex-wrap items-center justify-between gap-3",
-          children: [
-            j.jsxs("p", {
-              className: "text-sm",
-              children: [
-                j.jsx("span", { className: "font-mono text-seal", children: acct?.owner || "" }),
-                acct?.email ? j.jsx("span", { className: "text-muted", children: ` · ${acct.email}` }) : null,
-              ],
-            }),
-            j.jsx("button", {
-              type: "button",
-              className: "btn min-h-11",
-              disabled: busy,
-              onClick: () => void run(async () => signOut(), "Signed out on this browser."),
-              children: "Sign out",
-            }),
-          ],
-        }),
-      ]),
-    );
+    // ---- signed in: the account summary lives in the composed header
+    // above (avatar, handle, email, wallet/backup chips, Sign out) — no
+    // separate "Signed in" section anymore.
 
     // ---- restore
     if (restoreCandidate) {
@@ -664,6 +688,7 @@ export function KilnIdentityPanel() {
             }),
           ],
           "",
+          "Wallet recovery",
         ),
       );
     }
@@ -680,9 +705,9 @@ export function KilnIdentityPanel() {
                   j.jsxs(
                     "li",
                     {
-                      className: "flex flex-wrap items-center gap-2 px-3 py-2 text-sm",
+                      className: "flex flex-wrap items-center gap-2 px-3 py-3 text-sm",
                       children: [
-                        j.jsx("span", { className: "font-mono", children: shortAddr(w.address) }),
+                        j.jsx("span", { className: "font-mono", title: w.address, children: shortAddr(w.address) }),
                         j.jsx("span", { className: "chip", children: w.kind === "phantom" ? "Phantom" : "This app's key" }),
                         w.hasBackup ? j.jsx("span", { className: "chip text-seal", children: "Backup on file" }) : null,
                         wallet && wallet.address === w.address ? j.jsx("span", { className: "chip", children: "In this browser" }) : null,
@@ -742,6 +767,7 @@ export function KilnIdentityPanel() {
           }),
         ],
         "Wallets proven by signature, not by assertion. Phantom signs a one-time challenge; this browser's key signs locally.",
+        "Signature-linked",
       ),
     );
 
@@ -765,6 +791,7 @@ export function KilnIdentityPanel() {
             : j.jsx("p", { className: "mt-3 text-sm text-muted", children: "No wallet in this browser right now — restore yours above, or generate one from Connect." }),
         ],
         "The secret is encrypted here, with a key derived from your password. The forge stores only ciphertext and can never read your key — forget the password and the backup cannot be opened.",
+        "Encrypted backup",
       ),
     );
 
@@ -786,6 +813,7 @@ export function KilnIdentityPanel() {
           }),
         ],
         "The fallback the Connect dialog uses: the raw 64-character hex secret installs the key on this browser directly. It is not a backup — anyone holding the secret holds the wallet.",
+        "Advanced",
       ),
     );
   }
