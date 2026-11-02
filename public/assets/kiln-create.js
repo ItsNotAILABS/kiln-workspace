@@ -10,9 +10,9 @@
 //   Import from GitHub → /new?tab=import  (the import tab)
 //   New gist          → /gists            (the gists surface's create flow)
 //   New paper         → /papers#new       (the Papers Studio's new-paper door)
-// New workspace is deliberately absent: the app has no workspace surface or
-// create door today (zero app chunks mention workspaces) — see
-// NOTES-design-round.md, Piece 3.
+//   New workspace     → /workspaces?new=1 (the Workspaces surface's create
+//                       form — added by the parity batch, G1, once the
+//                       /workspaces surface existed; see NOTES-parity.md)
 
 import { i as reactNs, t as React } from "./react-SIfiwpqq.js";
 import { t as jsxmod } from "./jsx-runtime-0vZSBttN.js";
@@ -48,6 +48,12 @@ const DOORS = [
     icon: LayersIcon,
     label: "New paper",
     desc: "Start a paper in the Papers Studio — released under its own KILN ID.",
+  },
+  {
+    href: "/workspaces?new=1",
+    icon: LayersIcon,
+    label: "New workspace",
+    desc: "Group the repos of one effort under a single name.",
   },
 ];
 

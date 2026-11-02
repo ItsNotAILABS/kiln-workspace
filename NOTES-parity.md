@@ -70,9 +70,18 @@ flagged below.
   remains the real enforcement; UI hiding is presentation only.
 
 ## Pieces
-- [ ] 1 G1: kiln-parity-core.js (client + ciVerdict) + kiln-workspaces.js
+- [x] 1 G1: kiln-parity-core.js (client + ciVerdict) + kiln-workspaces.js
       (/workspaces list + detail + create) + _owner wrapper branch +
       kiln-create.js "New workspace" door.
+      Gates: node --check OK (4 files); load-sim RAN CLEAN
+      (kiln-parity-core, kiln-workspaces, kiln-create, _owner graph —
+      graph timers keep the sim process alive, verdict is the print,
+      account-batch precedent); class audit kiln-workspaces.js 57
+      tokens, none missing vs styles-A_fIl0Ci.css; ephemeral-daemon
+      proof .scratch/eph_proof.mjs 31/31 PASS (also covers the G18/G8
+      contracts below: details default private, PATCH flip both ways,
+      non-owner PATCH 403, invalid topic/visibility 400, public read
+      signed-out, private refused signed-out, ci pass vs ci null).
 - [ ] 2 G18: kiln-repo-meta.js settings sheet (description, topics,
       visibility flip) + plain visibility badge on the repo bar;
       owner-only render, non-owners see state only.
