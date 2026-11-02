@@ -10,7 +10,7 @@ only in kiln-identity.js / kiln-identity-core.js untouched crypto/session logic)
 NOT deployed — coordinator lands commits.
 
 ## Step log
-- [ ] 1 Inventory both surfaces cold + class audit
+- [x] 1 Inventory both surfaces cold + class audit (below; renders in .scratch/before-*.txt)
 - [ ] 2 Build: kiln-identity.js presentation pass
 - [ ] 3 Build: account chunk surgical pass
 - [ ] 4 Build: _owner chunk surgical pass
@@ -68,5 +68,68 @@ backup-offer card uses it — pre-existing, left as-is except color fix is separ
   [11px] uppercase tracking-[0.2em] muted eyebrows, seal accent for handles/links, surface cards
   rounded-xl border-border bg-surface p-5, chips for small facts, mono for addresses/hashes.
 
-## Inventory (cold, BEFORE) — filled by render gate below
-TBD
+## Inventory (cold, BEFORE) — local origin :18931 serving THIS worktree, host load 19–37 (slow boots)
+Gate: .scratch/profile_gate.mjs (Playwright headless, design-round pattern). Console entries on every
+run are only ERR_TUNNEL_CONNECTION_FAILED on external fetches — environmental, not pageerrors.
+- /account desktop 1280, signed-out: renders fully, 0 pageerrors, no h-overflow. Text order: header
+  nav → centered narrow (max-w-lg) "Make your account" text-3xl + sub + Sign up btn → identity panel
+  (max-w-2xl, left-aligned): eyebrow/head/desc, Sign in card, Create card (step-1 wallet box +
+  2-col form). DEFECTS: (a) page header centered+narrow vs panel left+wide — two competing frames;
+  (b) EVERY identity section repeats the same "KILN ACCOUNT" eyebrow — no per-section identity;
+  (c) err text uses text-red-400 which does not exist in the compiled CSS (renders inherited color);
+  (d) signed-out page gives no composed summary of what an account is (handle/address/balance live
+  only in prose). Mobile 375: same content, no overflow, bottom bar present (Profile/Repos/Create/
+  Activity/Wallet).
+- /account signed-in: code-read inventory (chunk d() signed-in branch above). Direct blob-seeding
+  the store does NOT survive boot in this harness (pre-boot and mutate-then-reload kiln-v2 blobs
+  both come back wallet:null — a boot path resets an externally-planted wallet; the app's own
+  Generate-wallet click is the only honest seed — probe running, see .scratch/genprobe.txt).
+  DEFECTS (from code): form floats as a bare grid with no card grouping; header prose line mixes
+  public link + repo count + Discord pitch in one breath; NO identity summary anywhere (address,
+  joined, KLN balance never composed — balance = store.balance, joined = profile.joined); the
+  identity panel then re-introduces itself with a second large header ("Your Kiln account",
+  text-3xl) under "Your profile" (text-4xl) — stacked competing headers; Discord invite card sits
+  between the profile form and the identity sections, splitting "who I am" from "my wallets".
+- /auro desktop, signed-out: renders, 0 pageerrors. Avatar "au" (= handle.slice(0,2), lowercase,
+  not initials), name auro, handle, fallback bio "Kiln account", "0 repositories · 0 stars",
+  "No visible repositories." — the LOCAL origin's public API answered auro with repos:[] tonight
+  (curl-verified, 16.5s cold) so the empty state is honest local data, not an app defect.
+- /meridian desktop (bundle-seeded org profile, the rich case): avatar "Me" (lab.slice(0,2) —
+  "Meridian Research" should initial as MR), name, lab seal line, handle, ORGANIZATION tag, long
+  bio, highlight, FULL 42-char address break-all dominating the loose aside, company row,
+  "Lisbon, Portugal · joined 2026", "2,210 followers · 61 following", "1 repositories · 1560 stars"
+  as a plain text line, website + twitter links, Pinned card + repo rows render correctly.
+  DEFECTS: aside is an ungrouped stack (no card), address block unframed, counts not composed as
+  stats, repo descriptions unclamped, sidebar not sticky on desktop.
+- Visual-language reference (Explore/Studio): eyebrow [11px] uppercase tracking-[0.2em] muted,
+  font-display serif titles tracking-tight, seal for handles/links, cards rounded-xl border
+  bg-surface p-5, chips for facts, mono for addresses. The profile surfaces mostly speak it —
+  the wins are grouping, hierarchy, density, and composition, not a restyle.
+
+## Build plan (presentation only; all bindings real)
+- kiln-identity.js (house module, readable): section() gains a per-section eyebrow (new param,
+  default "Kiln account" — call sites pass Sign in / New account / Account / Wallet / Backup /
+  Import); err/note become bordered banners (err text-red-400 → text-red-500, the class that
+  exists); panel header becomes a composed identity header — when signed in it shows initials
+  avatar + display handle (mono seal) + email + real chips (N linked wallets · backup on file /
+  no backup · this browser's wallet linked / not linked); signed-in "Signed in" section folds into
+  that header (Sign out stays, same handler) so the duplicate summary section goes away; linked
+  wallet rows get a two-line composition (address mono truncated by shortAddr as today + chip row).
+  NO handler, crypto, session, or copy-of-substance changes; backup-offer card untouched except
+  its err color class already uses text-red-400 in two status spots → text-red-500 (presentation).
+- account-49nJUaQm.js (minified, class/text-structure-safe edits only, no new JSX bindings):
+  signed-out frame max-w-lg py-12 text-center → max-w-2xl py-10 text-left, title text-3xl→text-4xl
+  (aligns with panel width/alignment); signed-in: header gains a real summary strip (address mono
+  truncated, joined, balance KLN, repo count — all from existing locals t/e/E + profile i) as
+  chips row under the prose line [the one structural addition — uses only in-scope bindings
+  u/jsx + t + i + e.balance, verified against the chunk's own JSX patterns]; form grid becomes a
+  card (rounded-xl border bg-surface p-5 on the existing grid div); Save button row gains a
+  "View public profile" link beside it (existing Link r + params pattern already used above).
+- _owner-B3Oc7_zJ.js (minified, same discipline): aside gains card classes + lg:sticky lg:top-20
+  self-start; avatar initials become word initials (pure string logic on existing locals, uppercase);
+  address becomes a framed block (rounded-lg border bg-bg px-3 py-2, break-all kept); counts line
+  ("N repositories · M stars") becomes a stats row with fg numbers (existing pattern from the
+  followers line); Edit profile btn → btn-primary (it is the owner's primary action); repo row
+  description gains line-clamp-2; repositories list rows py-3→py-4 for scan rhythm; followers
+  line spacing aligned. Balance chip ONLY when viewer is the owner (r) — store balance is the
+  viewer's, never shown on someone else's profile.
