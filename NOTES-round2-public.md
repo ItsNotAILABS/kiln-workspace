@@ -56,11 +56,14 @@ auro/kiln-agent-kit, auro/defi-kit, auro/blockchain-kit, auro/marketplace-paper.
   and the public reader's 8 s budget is far below the daemon's real latency;
   the file's own account-doc reader uses 25 s because "a few repos answer
   in ~20 s".)
-- Failure-empty cache confirmed: an immediate re-request of the live route
-  answered the same empty body in **0.22 s** (the cached failure, served as
-  truth). Daemon `details` for the 4 auro repos, called directly right
-  after, each exceeded a 60 s client cap under this load — daemon latency
-  in bad windows is far beyond the public reader's old 8 s budget.
+- A follow-up re-request of the live route again answered the empty body
+  as plain truth (200, `ok:true`, no marker) after a second failed
+  compute (23.8 s; the 30 s failure-cache window had lapsed in between —
+  either path, cached or recomputed, the failure is served as fact).
+  Daemon `details` for the 4 auro repos, called directly right after,
+  took **44.8 s / 59.6 s / 24.0 s / 19.3 s** (kiln-agent-kit / defi-kit /
+  blockchain-kit / marketplace-paper) — every one of them 2.4×–7.5× the
+  public reader's old 8 s abort budget, at load ~16–24.
 - Design-round scratch corroborates intermittency on the local path:
   probe-p4-repos.txt waited 150 s → "No public repositories answered";
   probe-p4-repos2.txt got all rows in 24 s; mobile probe in 20 s.
