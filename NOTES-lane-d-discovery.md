@@ -237,3 +237,9 @@ touched). Results:
 - Landed feature files tree-identical to lane-d branch (worker,
   public/.well-known/*, NOTES, README +6).
 - `node --check ops-cloudflare/kiln-edge-worker.mjs` clean.
+- Worker harness re-run on the LANDED tree (mock ASSETS + local
+  serve-original :18931, killed after): 13/13 PASS — both manifests
+  200 JSON naming /api/mcp, the /v1/agent-invites/ redeem door and the
+  /v1/capabilities pointer; /api + /api/ 200 JSON, POST /api 405;
+  /api/mcp GET 28 tools; initialize → kiln 2026.9 / 2024-11-05;
+  / SPA shell, /_serverFn stub, missing-asset 404 all intact.
