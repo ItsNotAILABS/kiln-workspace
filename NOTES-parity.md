@@ -82,16 +82,73 @@ flagged below.
       contracts below: details default private, PATCH flip both ways,
       non-owner PATCH 403, invalid topic/visibility 400, public read
       signed-out, private refused signed-out, ci pass vs ci null).
-- [ ] 2 G18: kiln-repo-meta.js settings sheet (description, topics,
-      visibility flip) + plain visibility badge on the repo bar;
-      owner-only render, non-owners see state only.
-- [ ] 3 G8: CI chip in kiln-repo-meta.js bar (details.ci) + workspace
-      detail repo rows.
+- [x] 2 G18: kiln-repo-meta.js (mounted by AppShell surgical edit:
+      one import + one jsx next to KCS — FLAGGED frozen-chunk edit #2)
+      renders the visibility badge + state line on every repo page and
+      the owner-only Settings panel (description, topics, visibility
+      flip with an explicit confirm step for making public; one click
+      back to private). Non-owners/signed-out see state only.
+- [x] 3 G8: CI chip in the repo-meta bar (details.ci via ciVerdict) +
+      workspace-detail repo rows (per-repo details reads, capped 24).
+      States pass/fail/running/none; null ci renders "No CI configured".
 
-## Gates (per piece, before its commit)
-- [ ] node --check every changed file
-- [ ] load-sim RAN CLEAN for each changed/new module (.scratch/loadsim.mjs)
-- [ ] class audit of new CSS class tokens vs styles-A_fIl0Ci.css
-- [ ] ephemeral-daemon / contract proofs (.scratch/eph_proof.mjs pattern)
-- [ ] cold-load renders desktop + 375px on a staged origin:
-      /workspaces, one repo page (settings + CI chip), 0 pageerrors
+## Gates
+- [x] node --check every changed file (all batch files, re-verified on tip)
+- [x] load-sim RAN CLEAN: kiln-parity-core, kiln-workspaces,
+      kiln-create, kiln-repo-meta, AppShell graph, _owner graph
+      (.scratch/loadsim*.txt; chunk graphs keep timers alive — verdict
+      is the print, account-batch precedent)
+- [x] class audit vs styles-A_fIl0Ci.css: kiln-workspaces.js 57 tokens,
+      kiln-repo-meta.js 47 tokens — none missing
+- [x] ephemeral-daemon proof .scratch/eph_proof.mjs: 31/31 PASS — the
+      app's own parity client against an ephemeral merged daemon
+      through a /api/forge proxy (workspace create/list/detail,
+      cross-namespace create 403, duplicate slug 409, details default
+      private, PATCH flip both ways, non-owner PATCH 403, invalid
+      topic/visibility 400, public readable signed-out, private
+      refused signed-out, ci pass vs ci null, ciVerdict branches)
+- [x] cold-load renders on a staged origin over an EPHEMERAL daemon
+      (.scratch/render_parity.mjs, seeded owner + public CI-pass repo
+      + private no-CI repo + workspace): desktop + 375px, /workspaces
+      (surface + workspace listed with repo count), both repo pages
+      (PUBLIC/PRIVATE badge, CI PASS / No CI configured, topics,
+      owner Settings button, state line), no Not Found, no horizontal
+      overflow, ZERO pageerrors. The only console errors are
+      ERR_TUNNEL_CONNECTION_FAILED for Google Fonts through the
+      sandbox egress proxy — the known sandbox wall, not app errors.
+- [x] G18 browser click-through (.scratch/render_settings.mjs,
+      desktop): Settings panel opens, description edit saves through
+      the UI, visibility flips private→public through the confirm
+      step, a fresh daemon details read agrees (public + the edited
+      description), 0 pageerrors.
+
+## Landing steps (for the parent — this batch does NOT deploy)
+1. Land Lane D first (its own Worker version), per the batch order.
+2. Cherry-pick this branch onto improve/ws-system-ui in order:
+   b6a78f0 (notes checkpoint) · b401c52 (G1) · <G18+G8 commit> ·
+   <final notes commit>. Verify the merged tree with
+   `git diff --name-only HEAD <parity-tip>` (expect empty after the
+   last cherry-pick) and re-run node --check + load-sim on the merged
+   tree.
+3. Deploy ONE Worker version from the landed tree (bindings verified
+   BEFORE rollout, per the account-batch receipt: ASSETS +
+   ORIGINAL_API_URL + KILN_SWARM_TOKEN), then served-bytes sha256 for
+   the changed assets: kiln-parity-core.js, kiln-workspaces.js,
+   kiln-repo-meta.js, kiln-create.js, _owner-B3Oc7_zJ.js,
+   AppShell-H-m5HQPd.js.
+4. No daemon boot needed: workspaces + details routes are already
+   LIVE on the running daemon (probed read-only 2026-11-02).
+
+## Honest shortfalls
+- CI chip does NOT appear inside kiln-repos.js list rows (live-bugs
+  lane owns that file; the task's preference was own-module rendering).
+  The chip ships on the repo page bar and workspace-detail rows.
+- "CI running" is mapped in ciVerdict but unreachable from today's
+  details contract (only finished verdicts are stored) — labeled in
+  kiln-parity-core.js, never synthesized.
+- Workspace detail is an in-surface view (no /workspaces/:id route —
+  the frozen router cannot admit one); members are read-only here
+  (invite management stays on the daemon's invite doors).
+- Live-domain render not attempted (this batch does not deploy); all
+  render evidence is the staged origin over this worktree's bytes
+  with an ephemeral daemon, plus the read-only live-daemon probes.
