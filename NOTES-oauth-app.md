@@ -321,3 +321,53 @@ http://127.0.0.1:18947, stub :18946). Sandbox wall disclosed, not faked.
   /login#oauth_handoff=boguscode against the gate stub shows "That
   sign-in link isn't active yet", fragment scrubbed, no raw string,
   0 pageerrors — PASS.
+
+## PREFLIGHT FIX — LANDING RECEIPT (2026-11-02, deploy-only finish)
+- Fix commit 27d3762 (branch oauth-preflight-fix) was already
+  fast-forwarded onto improve/ws-system-ui before this lane ran;
+  this lane deployed it, it did not rebuild or re-gate it.
+- Worker v53: new version_id
+  1f0c8909-df1d-45fc-99c8-008e36b2b8cf (created
+  2026-11-02T09:47:40Z), deployment
+  d9ef04ca-c16e-43a6-af1c-27db89124492 at 100%, confirmed via the
+  deployments API (latest entry, created 2026-11-02T09:50:09Z,
+  annotation "oauth-preflight-fix 27d3762"), not just the deploy
+  receipt. Deploy ran from the clean kiln-oauth-preflight
+  worktree via ops-cloudflare/deploy_worker.py, so the main
+  tree's foreign WIP never shipped. The deploy exec session was
+  interrupted after version creation; per the stop-and-verify
+  rule no second version was created — state was confirmed via
+  the versions/deployments API (v53 the sole new version, live
+  deployment still v52) before bindings verification and rollout.
+- Bindings verified on v53 BEFORE rollout: ASSETS (assets) ·
+  KILN_SWARM_TOKEN (secret_text, preserved via keep_bindings) ·
+  ORIGINAL_API_URL plain_text
+  https://kiln-original.medinatechlabs.net.
+- Served-bytes sha256, live == 27d3762 tree, MATCH 3/3:
+  kiln-identity-core.js
+  adc8bf1887ec1785ef67b5fa942ec7e03ea349f968a8194963931c866cc9033c ·
+  kiln-identity.js
+  10b0602aec8c10708546664865b9b6b9970e86b011d63f3e06195d20259957ba ·
+  login-CNvQADsL.js
+  c833b66094b103994157d17e4f0b256360ff8435d6c47c696072f9ff2ed0a454.
+  GET https://kiln.pocketnova.app/ -> 200 (1,699 B).
+- Live preflight probe, re-run after rollout:
+  GET /api/forge/v1/accounts/oauth/google/start?return=/login ->
+  HTTP 401, body verbatim:
+  {"error":"unauthorized: valid token required (Bearer <redacted> or Basic password)"}
+  Before/after, plainly: the endpoint answer is UNCHANGED — it is
+  still the staged pre-boot operator-gate 401, not a 404 and not
+  yet the post-boot 503 provider_not_configured. The fix is
+  app-side and is now live in the served bytes above: BEFORE
+  (v52), clicking "Continue with Google" navigated to that raw
+  401 JSON (login chunk) or rendered the daemon's raw
+  "unauthorized: valid token required …" string (panel); AFTER
+  (v53), both buttons map the 404 and this operator-gate 401 to
+  the honest not-switched-on state — no navigation, no raw
+  string.
+- No daemon was restarted by this lane (swarm daemon and
+  kiln-original untouched, per constraints).
+- Cleanup after this receipt commit: disposable worktree
+  ~/workspace/.worktrees/kiln-oauth-preflight removed and branch
+  oauth-preflight-fix deleted (merged via the fast-forward);
+  lane-b-oauth-app and its worktree kept.
