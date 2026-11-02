@@ -24,7 +24,7 @@ Shortcuts = modal (AppShell, `kiln:shortcuts` event), not a route.
 | Gists | Create form is LOCAL STATE ONLY — gists vanish on reload, never saved/sealed, copy claims "Instant sealed snippets. Same cipher as a repository" (lies) | TBD | TBD |
 | Bounties | Lists store issues with bountyKln>0; NO empty state — empty <ul> renders as a bare box, header claims escrow total | TBD | TBD |
 | CLI | In-browser terminal wired to real MCP tools (kiln_* tool calls) | TBD | TBD |
-| WebGPU | Real probe (probeGpu) + real hash mix; copy claims "Bound to every repository computer on port 7840" — no such binding exists (stale invented claim) | TBD | TBD |
+| WebGPU | Real probe (probeGpu) + real hash mix (gpuMix WebGPU compute, CPU SHA-256 fallback — verified in gpu-Bs1r2h0p.js); copy claimed "Bound to every repository computer on port 7840" — no such binding exists | FIXED (copy): port claim removed; intro now states the probe is real/on-page, GPU only when an adapter answers, and Cloud WebGPU jobs share the same path (true in cloud executeJob). Buttons to /cloud + /apps already real | node --check OK; re-render owed in batch gate |
 | Get started | 5-step checklist with live done-states; step 01 copy says sign-up is "Google, X, or email" — the app's actual account door is /login + wallet identity (kiln-identity) | TBD | TBD |
 | Shortcuts | Modal lists ⌘K, ?, g n, g s, g e, g a — ALL verified real in the AppShell key handler | TBD | code-verified |
 
