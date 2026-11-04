@@ -98,6 +98,40 @@ is ever relabeled**:
   runs with `--network=none --ignore-cgroups` because no cgroup
   controllers are delegated to this sandbox.
 
+One level deeper, the same sandbox property can block the launch
+itself depending on **which context asks**: `runsc` launches fine
+from an operator shell, but the identical launch from this backend's
+systemd service context dies in the gofer's namespace setup. For
+that failure class the engine hands the prepared bundle to an
+**operator-context runner queue** instead of failing the run:
+
+- The engine writes a pending request to
+  `~/.kiln-swarm/runsc/queue/pending/<name>.json` (state dir overridable
+  via `KILN_RUNSC_STATE`) and waits a few seconds
+  (`RUNSC_RUNNER_WAIT_MS`, default 4000) for a runner to report back
+  in `queue/results/`. If a runner reports the start, the run answers
+  `running`; if it reports a failure, the run fails with that error.
+- With no runner answering, the run answers **`state: "queued"`** —
+  the honest state. The container listing keeps showing it as queued
+  (label `runsc-direct`), its logs answer with its queue state, stop
+  dequeues it, and remove clears the queue records and the bundle.
+- The runner is `scripts/runsc-runner.mjs`, started by the operator
+  on the host: `node scripts/runsc-runner.mjs` watches the queue
+  (1s poll) and executes each pending bundle exactly the way the
+  engine would have — same runsc binary resolution, same flags —
+  then keeps the results truthful (a sandbox that disappears is
+  reconciled to `exited`; a `failed` result is never retried
+  automatically). `--once` processes the queue a single time and
+  exits. A pidfile refuses a second runner against the same state
+  dir. The console's engine panel says when containers are waiting
+  for it.
+- On a normal Docker host — and on the Vultr VM this design targets —
+  none of this is needed: the daemon's start path works, runs answer
+  `runtime: "docker"`, and the queue simply never engages. The queue
+  exists only so that on THIS host a run the service cannot start is
+  queued for a context that can, rather than declared started or
+  silently dropped.
+
 Builds have the same shape. `docker build` runs first
 (`buildMethod: "docker"`). Where buildkit is blocked the same way, a
 **COPY-only Dockerfile** (no `RUN` steps) is assembled for real:

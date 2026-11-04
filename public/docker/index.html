@@ -115,6 +115,7 @@
           <div><dt>Images</dt><dd id="stat-images">—</dd></div>
           <div><dt>Containers</dt><dd id="stat-containers">—</dd></div>
           <div class="hidden" id="stat-execution-wrap"><dt>Execution</dt><dd id="stat-execution">—</dd></div>
+          <div class="hidden" id="stat-runner-wrap"><dt>Runner queue</dt><dd id="stat-runner">—</dd></div>
         </dl>
       </section>
 
@@ -245,6 +246,7 @@
           statServer: $("stat-server"), statClient: $("stat-client"), statDriver: $("stat-driver"),
           statOs: $("stat-os"), statImages: $("stat-images"), statContainers: $("stat-containers"),
           statExecution: $("stat-execution"), statExecutionWrap: $("stat-execution-wrap"),
+          statRunner: $("stat-runner"), statRunnerWrap: $("stat-runner-wrap"),
           imagesBody: $("images-body"), imagesEmpty: $("images-empty"),
           containersBody: $("containers-body"), containersEmpty: $("containers-empty"),
           logsWrap: $("logs-wrap"), logsTitle: $("logs-title"), logsPre: $("logs-pre"),
@@ -367,6 +369,15 @@
               tr.appendChild(actions);
               els.containersBody.appendChild(tr);
             });
+            if (els.statRunnerWrap) {
+              var anyQueued = containers.some(function (c) { return c.state === "queued"; });
+              if (anyQueued) {
+                if (els.statRunner) els.statRunner.textContent = "Some containers are queued for the operator runner — start scripts/runsc-runner.mjs on the host to execute them.";
+                els.statRunnerWrap.classList.remove("hidden");
+              } else {
+                els.statRunnerWrap.classList.add("hidden");
+              }
+            }
             els.containersEmpty.textContent = containers.length ? "" : "No containers on this host.";
             showError("containers-error", null);
           }).catch(function (err) { showError("containers-error", err); });
