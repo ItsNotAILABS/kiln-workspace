@@ -1228,6 +1228,8 @@ const server = http.createServer(async (req, res) => {
           memoryMb: body.memoryMb,
           cpus: body.cpus,
           network: body.network ? String(body.network) : undefined,
+          cmd: Array.isArray(body.cmd) ? body.cmd.map(String) : undefined,
+          entrypoint: body.entrypoint ? String(body.entrypoint) : undefined,
         });
         sendJson(200, { ok: true, container: out });
         return;
