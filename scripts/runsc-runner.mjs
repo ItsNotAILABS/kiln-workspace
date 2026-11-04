@@ -306,6 +306,14 @@ function claimPidFile() {
     }
   })();
   if (existing && typeof existing.pid === "number" && existing.pid !== process.pid && pidAlive(existing.pid)) {
+    if (ONCE) {
+      // A live watch runner is already draining this queue — for a
+      // one-shot drain that is success, not a conflict. (The 5-minute
+      // drain cron relies on this: it must not report failure every
+      // time a session's watch runner is alive.)
+      logLine(`another runner (pid ${existing.pid}) is already serving this queue; --once has nothing to do`);
+      process.exit(0);
+    }
     logLine(`another runner (pid ${existing.pid}) already holds ${file}; refusing to start a second instance`);
     process.exit(1);
   }
