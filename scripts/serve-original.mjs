@@ -6,6 +6,7 @@ import path from "node:path";
 import url from "node:url";
 import { handleGithubRequest } from "./github-engine.mjs";
 import { handleKilnApi, runAgentTurnStream } from "./agent-turn.mjs";
+import * as dockerEngine from "./docker-engine.mjs";
 
 const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(ROOT, "public");
@@ -756,6 +757,70 @@ async function accountDocBody() {
   return fs.readFileSync(path.join(PUB, "kiln-account.json"), "utf8");
 }
 
+// ---------------------------------------------------------------------------
+// Docker operator console (ALL of /api/kiln/docker/*)
+//
+// Drives the host's real docker CLI through scripts/docker-engine.mjs.
+// Every route is gated on the operator token (~/.kiln-swarm/api.token),
+// compared in constant time by the engine's authorizeDocker — an operator
+// surface, not an account surface, and it fails closed: no token file or
+// no match means no service. Build jobs are in-memory only (state plus a
+// capped log ring buffer); a backend restart loses them (docs/DOCKER.md).
+// ---------------------------------------------------------------------------
+const DOCKER_TOKEN_PATH = path.join(os.homedir(), ".kiln-swarm", "api.token");
+const dockerJobs = new Map();
+const DOCKER_JOB_LOG_CAP = 500;
+
+function dockerJobView(job) {
+  return {
+    ok: true,
+    id: job.id,
+    state: job.state,
+    owner: job.owner,
+    repo: job.repo,
+    ref: job.ref,
+    tag: job.tag,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    error: job.error,
+    log: job.logLines.slice(-100),
+    logTotal: job.logLines.length,
+  };
+}
+
+async function runDockerBuildJob(job) {
+  let ctx = null;
+  try {
+    ctx = await dockerEngine.resolveBuildContext(job.owner, job.repo, job.ref);
+    dockerEngine.requireDockerfile(ctx.dir, job.dockerfile || undefined);
+    job.state = "building";
+    await dockerEngine.buildImage({
+      contextDir: ctx.dir,
+      tag: job.tag,
+      dockerfile: job.dockerfile || undefined,
+      onLine: (line) => {
+        job.logLines.push(line);
+        if (job.logLines.length > DOCKER_JOB_LOG_CAP) {
+          job.logLines.splice(0, job.logLines.length - DOCKER_JOB_LOG_CAP);
+        }
+      },
+    });
+    job.state = "done";
+  } catch (e) {
+    job.state = "failed";
+    job.error = e instanceof Error ? e.message : "build failed";
+  } finally {
+    job.finishedAt = new Date().toISOString();
+    if (ctx) {
+      try {
+        ctx.cleanup();
+      } catch {
+        /* temp-dir cleanup is best-effort */
+      }
+    }
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const u = url.parse(req.url, true);
   let pathname = decodeURIComponent(u.pathname || "/");
@@ -1058,6 +1123,156 @@ const server = http.createServer(async (req, res) => {
       sendFile(res, path.join(PUB, "kiln-account.json"), req);
     }
     return;
+  }
+
+  // Docker operator console — answered here, BEFORE the generic /api/kiln
+  // API block below, so the agent-turn engine never sees these paths.
+  // Every route first passes the operator-token gate; failure is a 401.
+  if (pathname === "/api/kiln/docker" || pathname.startsWith("/api/kiln/docker/")) {
+    const jsonHeaders = {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    };
+    const sendJson = (code, obj) => send(res, code, jsonHeaders, JSON.stringify(obj));
+    const readJsonBody = async () => {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      try {
+        return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      } catch {
+        return {};
+      }
+    };
+    if (!dockerEngine.authorizeDocker(req.headers.authorization || "", DOCKER_TOKEN_PATH)) {
+      sendJson(401, { ok: false, error: "docker console requires the operator token" });
+      return;
+    }
+    try {
+      const rest = pathname.slice("/api/kiln/docker/".length);
+      if (req.method === "GET" && rest === "status") {
+        const probe = await dockerEngine.probe();
+        let images = null;
+        let containers = null;
+        if (probe.available) {
+          try {
+            images = (await dockerEngine.listImages()).length;
+          } catch {
+            images = null;
+          }
+          try {
+            containers = (await dockerEngine.listContainers(true)).length;
+          } catch {
+            containers = null;
+          }
+        }
+        sendJson(200, { ok: true, engine: probe, counts: { images, containers } });
+        return;
+      }
+      if (req.method === "GET" && rest === "images") {
+        sendJson(200, { ok: true, images: await dockerEngine.listImages() });
+        return;
+      }
+      if (req.method === "GET" && rest === "containers") {
+        sendJson(200, { ok: true, containers: await dockerEngine.listContainers(true) });
+        return;
+      }
+      const logsMatch = rest.match(/^containers\/([^/]+)\/logs$/);
+      if (req.method === "GET" && logsMatch) {
+        const out = await dockerEngine.containerLogs(logsMatch[1], Number(u.query?.tail) || 200);
+        sendJson(200, { ok: true, ...out });
+        return;
+      }
+      const jobMatch = rest.match(/^jobs\/([^/]+)$/);
+      if (req.method === "GET" && jobMatch) {
+        const job = dockerJobs.get(jobMatch[1]);
+        if (!job) {
+          sendJson(404, { ok: false, error: "no such build job (jobs are in-memory and lost on restart)" });
+          return;
+        }
+        sendJson(200, dockerJobView(job));
+        return;
+      }
+      if (req.method === "POST" && rest === "build") {
+        const body = await readJsonBody();
+        const owner = dockerEngine.validateOwner(String(body.owner || "").toLowerCase());
+        const repo = dockerEngine.validateRepo(String(body.repo || ""));
+        const ref = dockerEngine.validateRef(body.ref);
+        const tag = body.tag
+          ? dockerEngine.validateImageRef(String(body.tag))
+          : dockerEngine.validateImageRef(`kiln/${repo.toLowerCase()}:latest`);
+        const job = {
+          id: `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          state: "queued",
+          owner,
+          repo,
+          ref,
+          tag,
+          dockerfile: body.dockerfile ? dockerEngine.validateDockerfileRel(String(body.dockerfile)) : null,
+          logLines: [],
+          startedAt: new Date().toISOString(),
+          finishedAt: null,
+          error: null,
+        };
+        dockerJobs.set(job.id, job);
+        void runDockerBuildJob(job);
+        sendJson(202, { ok: true, jobId: job.id });
+        return;
+      }
+      if (req.method === "POST" && rest === "run") {
+        const body = await readJsonBody();
+        const out = await dockerEngine.runContainer({
+          image: String(body.image || ""),
+          name: body.name ? String(body.name) : undefined,
+          ports: Array.isArray(body.ports) ? body.ports.map(String) : undefined,
+          env: body.env && typeof body.env === "object" && !Array.isArray(body.env) ? body.env : undefined,
+          memoryMb: body.memoryMb,
+          cpus: body.cpus,
+          network: body.network ? String(body.network) : undefined,
+        });
+        sendJson(200, { ok: true, container: out });
+        return;
+      }
+      const actionMatch = rest.match(/^containers\/([^/]+)\/(start|stop|restart)$/);
+      if (req.method === "POST" && actionMatch) {
+        const fn = {
+          start: dockerEngine.startContainer,
+          stop: dockerEngine.stopContainer,
+          restart: dockerEngine.restartContainer,
+        }[actionMatch[2]];
+        const out = await fn(actionMatch[1]);
+        sendJson(200, { ok: true, ...out });
+        return;
+      }
+      const containerMatch = rest.match(/^containers\/([^/]+)$/);
+      if (req.method === "GET" && containerMatch) {
+        sendJson(200, { ok: true, container: await dockerEngine.inspectContainer(containerMatch[1]) });
+        return;
+      }
+      if (req.method === "DELETE" && containerMatch) {
+        const force = u.query?.force === "1" || u.query?.force === "true";
+        const out = await dockerEngine.removeContainer(containerMatch[1], { force });
+        sendJson(200, { ok: true, ...out });
+        return;
+      }
+      sendJson(404, { ok: false, error: "unknown docker route" });
+      return;
+    } catch (e) {
+      const code = e instanceof dockerEngine.DockerError ? e.code : undefined;
+      const status =
+        code === "DOCKER_UNAVAILABLE"
+          ? 503
+          : code && code.startsWith("BAD_")
+            ? 400
+            : code === "NO_DOCKERFILE" || code === "REPO_NOT_FOUND" || code === "DOCKER_NOT_FOUND"
+              ? 404
+              : 500;
+      sendJson(status, {
+        ok: false,
+        error: e instanceof Error ? e.message : "docker error",
+        ...(code ? { code } : {}),
+      });
+      return;
+    }
   }
 
   if (pathname.startsWith("/api/kiln") || pathname === "/api/mcp") {
