@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en" class="dark antialiased">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" />
+    <title>KILN · Docker</title>
+    <meta name="description" content="Operator console for the Docker engine on this KILN host: build images from forge repositories, run containers, read logs. Gated on the operator token." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" />
+    <style>
+      :root {
+        --bg: #09090b; --panel: #101012; --panel-2: #161618; --border: #26262a;
+        --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --amber: #fbbf24;
+        --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; --radius: 10px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body { background: var(--bg); color: var(--text); font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; font-size: 15px; line-height: 1.55; }
+      code, .mono, pre, td.mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
+      a { color: var(--text); }
+      .topbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(9,9,11,.92); backdrop-filter: blur(8px); z-index: 5; }
+      .brand { font-family: "Newsreader", Georgia, serif; font-size: 22px; font-weight: 600; text-decoration: none; letter-spacing: .02em; }
+      .brand-sub { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .14em; }
+      .topbar nav { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; }
+      .topbar nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+      .topbar nav a:hover { color: var(--text); }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 72px; }
+      h1 { font-family: "Newsreader", Georgia, serif; font-weight: 600; font-size: 34px; line-height: 1.12; margin: 4px 0 8px; }
+      h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px; }
+      .lede { color: var(--muted); max-width: 68ch; margin: 0 0 8px; }
+      .card { border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); padding: 16px 18px; margin: 16px 0; }
+      .card-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+      .card-head .spacer { margin-left: auto; }
+      .muted { color: var(--muted); }
+      .small { font-size: 13px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+      label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+      input, select { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 14px; font-family: inherit; min-width: 0; }
+      input:focus, select:focus { outline: 1px solid var(--amber); outline-offset: 0; }
+      button { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 14px; font-size: 14px; font-family: inherit; cursor: pointer; }
+      button:hover { border-color: #3f3f46; }
+      button.primary { background: var(--amber); border-color: var(--amber); color: #181203; font-weight: 600; }
+      button.primary:hover { background: #fcd34d; }
+      button.danger:hover { border-color: var(--bad); color: var(--bad); }
+      button.small-btn { padding: 3px 9px; font-size: 12.5px; border-radius: 6px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+      th { text-align: left; color: var(--faint); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+      td { padding: 7px 8px; border-bottom: 1px solid #1b1b1e; vertical-align: top; }
+      tr:last-child td { border-bottom: none; }
+      .table-wrap { overflow-x: auto; }
+      .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; }
+      .badge.ok { color: var(--ok); border-color: rgba(74,222,128,.4); }
+      .badge.bad { color: var(--bad); border-color: rgba(248,113,113,.4); }
+      .notice { border: 1px solid var(--warn); color: var(--warn); background: rgba(251,191,36,.07); border-radius: var(--radius); padding: 12px 16px; margin: 16px 0; font-size: 14px; }
+      .error-line { color: var(--bad); font-size: 13.5px; min-height: 1.2em; margin: 8px 0 0; }
+      .ok-line { color: var(--ok); font-size: 13.5px; margin: 8px 0 0; }
+      dl.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin: 12px 0 0; }
+      dl.stats dt { color: var(--faint); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; }
+      dl.stats dd { margin: 2px 0 0; font-size: 15px; }
+      pre.log { background: #0c0c0e; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; overflow: auto; max-height: 380px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; }
+      .hidden { display: none !important; }
+      footer { border-top: 1px solid var(--border); margin-top: 40px; padding-top: 18px; color: var(--faint); font-size: 13px; }
+      @media (max-width: 640px) { h1 { font-size: 27px; } .topbar nav { margin-left: 0; } }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">KILN</a>
+      <span class="brand-sub">Docker</span>
+      <nav>
+        <a href="/">App</a>
+        <a href="/agent-phone/">Agent Phone</a>
+      </nav>
+    </header>
+    <main class="wrap">
+      <h1>Docker console</h1>
+      <p class="lede">The engine on this host, driven directly: build images from forge repositories, run containers with capped privileges, read logs, tear down. Every call on this page is gated on the <strong>operator token</strong> — the same token the forge daemon trusts. Nothing here is available to account sessions.</p>
+
+      <section class="card" id="token-card">
+        <div class="card-head">
+          <h2>Operator token</h2>
+          <span class="badge" id="token-state">not connected</span>
+        </div>
+        <p class="muted small">Kept in this tab's session storage only, sent as an Authorization header, never written to disk or into the page. It is forgotten when the tab closes — or sooner, with the button.</p>
+        <div class="row">
+          <label>Token
+            <input type="password" id="token-input" autocomplete="off" spellcheck="false" size="36" placeholder="operator token" />
+          </label>
+          <button type="button" class="primary" id="token-connect">Connect</button>
+          <button type="button" id="token-forget">Forget token</button>
+        </div>
+        <p class="error-line" id="token-error"></p>
+      </section>
+
+      <section class="card" id="engine-card">
+        <div class="card-head">
+          <h2>Engine</h2>
+          <span class="badge" id="engine-state">unknown</span>
+          <span class="spacer"></span>
+          <button type="button" class="small-btn" id="engine-refresh">Refresh</button>
+        </div>
+        <div class="notice hidden" id="engine-down">
+          <strong>Docker engine unavailable.</strong>
+          <span id="engine-down-reason"></span>
+          <div class="small">The console stays honest about this: no images, containers or builds can be offered until the engine answers on this host.</div>
+        </div>
+        <dl class="stats" id="engine-stats">
+          <div><dt>Server version</dt><dd id="stat-server">—</dd></div>
+          <div><dt>Client version</dt><dd id="stat-client">—</dd></div>
+          <div><dt>Storage driver</dt><dd id="stat-driver">—</dd></div>
+          <div><dt>OS / arch</dt><dd id="stat-os">—</dd></div>
+          <div><dt>Images</dt><dd id="stat-images">—</dd></div>
+          <div><dt>Containers</dt><dd id="stat-containers">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="card" id="build-card">
+        <div class="card-head">
+          <h2>Build from a forge repo</h2>
+          <span class="badge" id="build-state">idle</span>
+        </div>
+        <p class="muted small">The repo is materialized from the forge's own git store at the chosen ref; its Dockerfile (repo root, or the confined path given) builds the image. Build output streams below; the job lives in the backend's memory, so a backend restart loses it.</p>
+        <form id="build-form">
+          <div class="row">
+            <label>Owner <input type="text" id="build-owner" value="auro" size="12" /></label>
+            <label>Repo <input type="text" id="build-repo" size="18" placeholder="repo-name" /></label>
+            <label>Ref <input type="text" id="build-ref" size="12" placeholder="HEAD" /></label>
+            <label>Tag <input type="text" id="build-tag" size="22" placeholder="kiln/&lt;repo&gt;:latest" /></label>
+            <label>Dockerfile path <input type="text" id="build-dockerfile" size="16" placeholder="Dockerfile" /></label>
+            <button type="submit" class="primary">Build image</button>
+          </div>
+        </form>
+        <p class="error-line" id="build-error"></p>
+        <pre class="log hidden" id="build-log"></pre>
+      </section>
+
+      <section class="card" id="images-card">
+        <div class="card-head">
+          <h2>Images</h2>
+          <span class="spacer"></span>
+          <button type="button" class="small-btn" id="images-refresh">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Repository</th><th>Tag</th><th>Size</th><th>Created</th><th>ID</th></tr></thead>
+            <tbody id="images-body"></tbody>
+          </table>
+        </div>
+        <p class="muted small" id="images-empty">No images loaded yet.</p>
+        <p class="error-line" id="images-error"></p>
+      </section>
+
+      <section class="card" id="run-card">
+        <div class="card-head">
+          <h2>Run a container</h2>
+        </div>
+        <p class="muted small">Runs detached with all capabilities dropped and no-new-privileges set, labeled <span class="mono">kiln.managed=1</span>. Ports are host:container pairs, comma-separated.</p>
+        <form id="run-form">
+          <div class="row">
+            <label>Image <select id="run-image"></select></label>
+            <label>Name <input type="text" id="run-name" size="16" placeholder="optional" /></label>
+            <label>Ports <input type="text" id="run-ports" size="18" placeholder="8080:80, 8443:443" /></label>
+            <label>Memory (MB) <input type="number" id="run-memory" min="16" max="65536" size="8" placeholder="512" /></label>
+            <button type="submit" class="primary">Run</button>
+          </div>
+        </form>
+        <p class="error-line" id="run-error"></p>
+        <p class="ok-line" id="run-ok"></p>
+      </section>
+
+      <section class="card" id="containers-card">
+        <div class="card-head">
+          <h2>Containers</h2>
+          <span class="spacer"></span>
+          <button type="button" class="small-btn" id="containers-refresh">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Status</th><th>Ports</th><th>Actions</th></tr></thead>
+            <tbody id="containers-body"></tbody>
+          </table>
+        </div>
+        <p class="muted small" id="containers-empty">No containers loaded yet.</p>
+        <p class="error-line" id="containers-error"></p>
+        <div id="logs-wrap" class="hidden">
+          <h2 style="margin-top:18px;">Logs — <span class="mono" id="logs-title"></span></h2>
+          <pre class="log" id="logs-pre"></pre>
+        </div>
+      </section>
+
+      <footer>
+        KILN · Docker operator console. Runs carry the <span class="mono">kiln.managed=1</span> label, dropped capabilities and no-new-privileges by default. Build jobs are in-memory and lost on backend restart. Engine networking follows this host's Docker daemon configuration.
+      </footer>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+        var TOKEN_KEY = "kiln-docker-token";
+        function $(id) { return document.getElementById(id); }
+        function el(tag, text, cls) {
+          var n = document.createElement(tag);
+          if (text !== null && text !== undefined) n.textContent = String(text);
+          if (cls) n.className = cls;
+          return n;
+        }
+        function getToken() {
+          try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
+        }
+        function setToken(t) {
+          try {
+            if (t) sessionStorage.setItem(TOKEN_KEY, t);
+            else sessionStorage.removeItem(TOKEN_KEY);
+          } catch (e) { /* storage unavailable: token simply does not persist */ }
+        }
+        function api(method, path, body) {
+          var headers = { authorization: "Bearer " + getToken(), accept: "application/json" };
+          var opts = { method: method, headers: headers };
+          if (body !== undefined) {
+            headers["content-type"] = "application/json";
+            opts.body = JSON.stringify(body);
+          }
+          return fetch(path, opts).then(function (res) {
+            return res.json().catch(function () { return null; }).then(function (data) {
+              if (!res.ok || !data || data.ok === false) {
+                var err = new Error((data && data.error) || ("request failed: " + res.status));
+                err.status = res.status;
+                throw err;
+              }
+              return data;
+            });
+          });
+        }
+        function showError(id, err) {
+          var n = $(id);
+          if (n) n.textContent = err ? String(err.message || err) : "";
+        }
+
+        var els = {
+          tokenInput: $("token-input"), tokenState: $("token-state"), tokenError: $("token-error"),
+          engineState: $("engine-state"), engineDown: $("engine-down"), engineDownReason: $("engine-down-reason"),
+          statServer: $("stat-server"), statClient: $("stat-client"), statDriver: $("stat-driver"),
+          statOs: $("stat-os"), statImages: $("stat-images"), statContainers: $("stat-containers"),
+          imagesBody: $("images-body"), imagesEmpty: $("images-empty"),
+          containersBody: $("containers-body"), containersEmpty: $("containers-empty"),
+          logsWrap: $("logs-wrap"), logsTitle: $("logs-title"), logsPre: $("logs-pre"),
+          buildState: $("build-state"), buildLog: $("build-log"),
+          runImage: $("run-image"), runOk: $("run-ok"),
+        };
+        if (!els.tokenInput || !els.imagesBody || !els.containersBody) return; // page skeleton missing: stay silent
+
+        var buildPoll = null;
+
+        function setTokenState() {
+          var on = !!getToken();
+          els.tokenState.textContent = on ? "connected (tab session)" : "not connected";
+          els.tokenState.className = "badge" + (on ? " ok" : "");
+        }
+
+        function refreshStatus() {
+          return api("GET", "/api/kiln/docker/status").then(function (data) {
+            var eng = data.engine || {};
+            if (!eng.available) {
+              els.engineState.textContent = "unavailable";
+              els.engineState.className = "badge bad";
+              els.engineDown.classList.remove("hidden");
+              els.engineDownReason.textContent = eng.reason || "the engine did not answer";
+              return;
+            }
+            els.engineState.textContent = "available";
+            els.engineState.className = "badge ok";
+            els.engineDown.classList.add("hidden");
+            els.statServer.textContent = eng.serverVersion || "—";
+            els.statClient.textContent = eng.clientVersion || "—";
+            els.statDriver.textContent = eng.driver || "—";
+            els.statOs.textContent = [eng.os, eng.arch].filter(Boolean).join(" / ") || "—";
+            var counts = data.counts || {};
+            els.statImages.textContent = counts.images === null || counts.images === undefined ? (eng.images != null ? String(eng.images) : "—") : String(counts.images);
+            els.statContainers.textContent = counts.containers === null || counts.containers === undefined ? (eng.containers != null ? String(eng.containers) : "—") : String(counts.containers);
+          }).catch(function (err) {
+            els.engineState.textContent = err.status === 401 ? "unauthorized" : "unreachable";
+            els.engineState.className = "badge bad";
+            throw err;
+          });
+        }
+
+        function refreshImages() {
+          return api("GET", "/api/kiln/docker/images").then(function (data) {
+            var images = data.images || [];
+            els.imagesBody.textContent = "";
+            els.runImage.textContent = "";
+            images.forEach(function (img) {
+              var tr = document.createElement("tr");
+              tr.appendChild(el("td", img.repository || "", "mono"));
+              tr.appendChild(el("td", img.tag || ""));
+              tr.appendChild(el("td", img.size || ""));
+              tr.appendChild(el("td", img.createdAt || ""));
+              tr.appendChild(el("td", (img.id || "").slice(0, 19), "mono"));
+              els.imagesBody.appendChild(tr);
+              var ref = (img.repository || "") + (img.tag ? ":" + img.tag : "");
+              if (ref && img.repository !== "<none>") {
+                var opt = document.createElement("option");
+                opt.value = ref;
+                opt.textContent = ref;
+                els.runImage.appendChild(opt);
+              }
+            });
+            els.imagesEmpty.textContent = images.length ? "" : "No images on this host.";
+            showError("images-error", null);
+          }).catch(function (err) { showError("images-error", err); });
+        }
+
+        function containerAction(id, action) {
+          var path = "/api/kiln/docker/containers/" + encodeURIComponent(id) + "/" + action;
+          return api("POST", path, {}).then(function () { return refreshContainers(); })
+            .catch(function (err) { showError("containers-error", err); });
+        }
+
+        function refreshContainers() {
+          return api("GET", "/api/kiln/docker/containers").then(function (data) {
+            var containers = data.containers || [];
+            els.containersBody.textContent = "";
+            containers.forEach(function (c) {
+              var tr = document.createElement("tr");
+              tr.appendChild(el("td", c.name || "", "mono"));
+              tr.appendChild(el("td", c.image || "", "mono"));
+              var stateTd = document.createElement("td");
+              var badge = el("span", c.state || "", "badge" + (c.state === "running" ? " ok" : ""));
+              stateTd.appendChild(badge);
+              tr.appendChild(stateTd);
+              tr.appendChild(el("td", c.status || ""));
+              tr.appendChild(el("td", c.ports || "", "mono"));
+              var actions = el("td", null, null);
+              var box = el("div", null, "actions");
+              [["Start", "start"], ["Stop", "stop"], ["Restart", "restart"]].forEach(function (pair) {
+                var b = el("button", pair[0], "small-btn");
+                b.type = "button";
+                b.addEventListener("click", function () { containerAction(c.id, pair[1]); });
+                box.appendChild(b);
+              });
+              var logsBtn = el("button", "Logs", "small-btn");
+              logsBtn.type = "button";
+              logsBtn.addEventListener("click", function () { showLogs(c); });
+              box.appendChild(logsBtn);
+              var rmBtn = el("button", "Remove", "small-btn danger");
+              rmBtn.type = "button";
+              rmBtn.addEventListener("click", function () {
+                api("DELETE", "/api/kiln/docker/containers/" + encodeURIComponent(c.id) + "?force=1")
+                  .then(function () { return refreshContainers(); })
+                  .catch(function (err) { showError("containers-error", err); });
+              });
+              box.appendChild(rmBtn);
+              actions.appendChild(box);
+              tr.appendChild(actions);
+              els.containersBody.appendChild(tr);
+            });
+            els.containersEmpty.textContent = containers.length ? "" : "No containers on this host.";
+            showError("containers-error", null);
+          }).catch(function (err) { showError("containers-error", err); });
+        }
+
+        function showLogs(c) {
+          api("GET", "/api/kiln/docker/containers/" + encodeURIComponent(c.id) + "/logs?tail=200").then(function (data) {
+            els.logsWrap.classList.remove("hidden");
+            els.logsTitle.textContent = c.name || c.id;
+            els.logsPre.textContent = data.logs || "(no log output)";
+          }).catch(function (err) { showError("containers-error", err); });
+        }
+
+        function refreshAll() {
+          if (!getToken()) return;
+          refreshStatus().catch(function (err) { showError("token-error", err); });
+          refreshImages();
+          refreshContainers();
+        }
+
+        function pollBuild(jobId) {
+          if (buildPoll) clearInterval(buildPoll);
+          var tick = function () {
+            api("GET", "/api/kiln/docker/jobs/" + encodeURIComponent(jobId)).then(function (job) {
+              els.buildState.textContent = job.state + (job.tag ? " · " + job.tag : "");
+              els.buildState.className = "badge" + (job.state === "done" ? " ok" : job.state === "failed" ? " bad" : "");
+              els.buildLog.classList.remove("hidden");
+              els.buildLog.textContent = (job.log || []).join("\n") || "(no output yet)";
+              els.buildLog.scrollTop = els.buildLog.scrollHeight;
+              if (job.state === "done" || job.state === "failed") {
+                clearInterval(buildPoll);
+                buildPoll = null;
+                if (job.state === "failed") showError("build-error", new Error(job.error || "build failed"));
+                if (job.state === "done") refreshImages();
+              }
+            }).catch(function (err) {
+              clearInterval(buildPoll);
+              buildPoll = null;
+              showError("build-error", err);
+            });
+          };
+          tick();
+          buildPoll = setInterval(tick, 1200);
+        }
+
+        $("token-connect").addEventListener("click", function () {
+          var t = els.tokenInput.value.trim();
+          if (!t) { showError("token-error", new Error("paste the operator token first")); return; }
+          setToken(t);
+          els.tokenInput.value = "";
+          showError("token-error", null);
+          setTokenState();
+          refreshAll();
+        });
+        $("token-forget").addEventListener("click", function () {
+          setToken("");
+          setTokenState();
+          els.imagesBody.textContent = "";
+          els.containersBody.textContent = "";
+          els.runImage.textContent = "";
+          els.engineState.textContent = "unknown";
+          els.engineState.className = "badge";
+          showError("token-error", null);
+        });
+        $("engine-refresh").addEventListener("click", refreshAll);
+        $("images-refresh").addEventListener("click", refreshImages);
+        $("containers-refresh").addEventListener("click", refreshContainers);
+
+        $("build-form").addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          showError("build-error", null);
+          var body = {
+            owner: $("build-owner").value.trim(),
+            repo: $("build-repo").value.trim(),
+            ref: $("build-ref").value.trim() || undefined,
+            tag: $("build-tag").value.trim() || undefined,
+            dockerfile: $("build-dockerfile").value.trim() || undefined,
+          };
+          els.buildState.textContent = "starting";
+          els.buildState.className = "badge";
+          api("POST", "/api/kiln/docker/build", body).then(function (data) {
+            pollBuild(data.jobId);
+          }).catch(function (err) {
+            els.buildState.textContent = "failed to start";
+            els.buildState.className = "badge bad";
+            showError("build-error", err);
+          });
+        });
+
+        $("run-form").addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          showError("run-error", null);
+          els.runOk.textContent = "";
+          var ports = $("run-ports").value.split(/[,\s]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+          var mem = $("run-memory").value.trim();
+          var body = {
+            image: els.runImage.value,
+            name: $("run-name").value.trim() || undefined,
+            ports: ports.length ? ports : undefined,
+            memoryMb: mem ? Number(mem) : undefined,
+          };
+          if (!body.image) { showError("run-error", new Error("no image selected — build or pull one first")); return; }
+          api("POST", "/api/kiln/docker/run", body).then(function (data) {
+            els.runOk.textContent = "Started container " + ((data.container && data.container.id) || "").slice(0, 19);
+            return refreshContainers();
+          }).catch(function (err) { showError("run-error", err); });
+        });
+
+        setTokenState();
+        if (getToken()) refreshAll();
+      })();
+    </script>
+  </body>
+</html>
