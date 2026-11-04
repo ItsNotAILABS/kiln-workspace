@@ -479,6 +479,10 @@ async function runViaRunsc({ image, name, env, cmd, entrypoint } = {}) {
     : `kiln-${crypto.randomBytes(6).toString("hex")}`;
   const bundleDir = runscBundleDir(cname);
   const rootfsDir = path.join(bundleDir, "rootfs");
+  // A previous failed attempt for the same name leaves a bundle
+  // behind, and `runsc spec` refuses to write over its config.json.
+  // A bundle is a pure function of (image, request) — rebuild clean.
+  fs.rmSync(bundleDir, { recursive: true, force: true });
   fs.mkdirSync(rootfsDir, { recursive: true });
   await exportImageRootfs(image, rootfsDir);
   const cfg = await readImageConfig(image);
