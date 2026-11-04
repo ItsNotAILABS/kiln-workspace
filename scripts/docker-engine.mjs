@@ -941,6 +941,14 @@ export async function runContainer({ image, name, env, ports, memoryMb, cpus, ne
     // fallback and are NOT silently claimed: the result carries
     // ports: [] and the runsc-direct runtime label.
     if (runscBin() && e instanceof DockerError && RUN_FALLBACK_RE.test(e.message)) {
+      // A failed `docker run --name` leaves a created-state namesake
+      // behind that would shadow the runsc entry in the merged list
+      // (docker wins name clashes). It never started — remove it
+      // before the fallback launch. Best-effort: a failed rm must
+      // not block the fallback.
+      if (name) {
+        await execDocker(["rm", validateContainerName(name)], { timeoutMs: 15000 }).catch(() => {});
+      }
       return runViaRunsc({ image, name, env, cmd, entrypoint });
     }
     throw e;
