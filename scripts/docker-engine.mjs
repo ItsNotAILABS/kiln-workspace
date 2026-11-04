@@ -9,6 +9,13 @@
 // Honesty contract: when docker is absent or the daemon is down, probe()
 // answers { available:false, reason } with the CLI's own words. Nothing
 // here fabricates engine state.
+//
+// One labeled exception to "docker or nothing": on hosts where the
+// daemon answers but container start through the containerd shim is
+// blocked by the sandbox (see the runsc-direct section below), run and
+// COPY-only build operations fall back to a gVisor runsc path — and
+// every result says so (runtime:"runsc-direct", buildMethod:
+// "import-assembly"). A fallback is never dressed as a docker result.
 // ---------------------------------------------------------------------------
 import { execFile, spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -147,6 +154,309 @@ function parseJsonLines(text, what) {
   return out;
 }
 
+// --- runsc-direct fallback ---------------------------------------------------
+// On hosts where dockerd answers but container START through the
+// containerd shim is blocked by the sandbox — here: setns into the
+// libnetwork-owned netns in the OCI spec is denied, and runc/crun die
+// on a session-keyring EPERM inside the container's fresh namespaces —
+// gVisor's runsc invoked DIRECTLY on an OCI bundle still runs real,
+// isolated containers (proven on this host: alpine, uid=0). When a
+// docker run fails with that failure class and a runsc binary exists,
+// the engine falls back to runsc and labels the result
+// runtime:"runsc-direct" — never as a plain docker run. Runs in this
+// mode publish no ports and enforce no resource limits
+// (--network=none --ignore-cgroups: no cgroup controllers are
+// delegated to this sandbox); the labels say what actually ran.
+
+const RUN_FALLBACK_RE = /namespace|keyring|SetNetworkArgs|sandbox exited|loopback|operation not permitted/i;
+
+export function runscBin() {
+  if (process.env.KILN_RUNSC_BIN) return process.env.KILN_RUNSC_BIN;
+  const candidate = "/usr/local/bin/runsc";
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+export function runscStateDir() {
+  return process.env.KILN_RUNSC_STATE || path.join(os.homedir(), ".kiln-swarm", "runsc");
+}
+
+function runscRootDir() {
+  return path.join(runscStateDir(), "root");
+}
+
+function runscBundleDir(name) {
+  return path.join(runscStateDir(), "bundles", name);
+}
+
+function runscLogPath(name) {
+  return path.join(runscStateDir(), "logs", `${name}.log`);
+}
+
+function runscMetaPath(name) {
+  return path.join(runscBundleDir(name), "meta.json");
+}
+
+function readRunscMeta(name) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(runscMetaPath(name), "utf8"));
+    return meta && typeof meta === "object" ? meta : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRunscContainer(id) {
+  return !!readRunscMeta(id);
+}
+
+function isNoSuchContainer(err) {
+  return err instanceof Error && /no such container/i.test(err.message);
+}
+
+function runscCliError(err, stderr) {
+  if (err && err.code === "ENOENT") {
+    return new DockerError("RUNSC_UNAVAILABLE", `runsc binary not found (${runscBin()})`);
+  }
+  if (err && (err.killed || err.signal === "SIGTERM")) {
+    return new DockerError("DOCKER_TIMEOUT", "runsc CLI timed out");
+  }
+  const detail = trimErr(stderr) || trimErr(err && err.message) || "runsc CLI failed";
+  return new DockerError("RUNSC_FAILED", detail);
+}
+
+function execRunsc(args, { timeoutMs = 30000, maxBuffer = 8 * 1024 * 1024, cwd } = {}) {
+  return new Promise((resolve, reject) => {
+    const bin = runscBin();
+    if (!bin) return reject(new DockerError("RUNSC_UNAVAILABLE", "runsc binary not available on this host"));
+    execFile(bin, args, { timeout: timeoutMs, maxBuffer, windowsHide: true, cwd }, (err, stdout, stderr) => {
+      if (err) return reject(runscCliError(err, stderr));
+      resolve({ stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
+
+function runscStateArgs() {
+  return ["--root", runscRootDir()];
+}
+
+function executionInfo() {
+  if (runscBin()) {
+    return {
+      runscDirect: true,
+      note: "containers may execute via runsc-direct (gVisor) when the daemon's start path is blocked on this host",
+    };
+  }
+  return { runscDirect: false };
+}
+
+// Stream `docker export <tmpName>` into a tar extraction at destDir —
+// the image's rootfs without ever starting the container.
+function pipeDockerExport(tmpName, destDir) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const docker = spawn(dockerBin(), ["export", tmpName], { windowsHide: true });
+    const tar = spawn("tar", ["-x", "-C", destDir], { windowsHide: true });
+    let dockerErr = "";
+    let tarErr = "";
+    docker.stderr.on("data", (d) => { dockerErr += d.toString("utf8"); });
+    tar.stderr.on("data", (d) => { tarErr += d.toString("utf8"); });
+    docker.stdout.pipe(tar.stdin);
+    let dockerCode = null;
+    let tarCode = null;
+    const done = () => {
+      if (dockerCode === null || tarCode === null) return;
+      if (dockerCode !== 0) rejectPromise(new DockerError("DOCKER_FAILED", trimErr(dockerErr) || `docker export exited ${dockerCode}`));
+      else if (tarCode !== 0) rejectPromise(new DockerError("DOCKER_FAILED", trimErr(tarErr) || `tar exited ${tarCode}`));
+      else resolvePromise();
+    };
+    docker.on("error", (e) => { dockerCode = -1; dockerErr = e.message; done(); });
+    tar.on("error", (e) => { tarCode = -1; tarErr = e.message; done(); });
+    docker.on("close", (c) => { dockerCode = c; done(); });
+    tar.on("close", (c) => { tarCode = c; done(); });
+  });
+}
+
+async function exportImageRootfs(image, destDir) {
+  const tmpName = `kiln-export-${crypto.randomBytes(6).toString("hex")}`;
+  try {
+    await execDocker(["create", "--name", tmpName, image], { timeoutMs: 30000 });
+  } catch (e) {
+    // An image with no entrypoint/cmd in its config (e.g. a plain
+    // `docker import` product) makes create refuse without a command.
+    // The container is never started — it exists only to export its
+    // rootfs and is removed below — so a placeholder command is exact.
+    if (!/no command specified/i.test(e instanceof Error ? e.message : "")) throw e;
+    await execDocker(["create", "--name", tmpName, image, "/bin/sh"], { timeoutMs: 30000 });
+  }
+  try {
+    await pipeDockerExport(tmpName, destDir);
+  } finally {
+    await execDocker(["rm", tmpName], { timeoutMs: 30000 }).catch(() => {});
+  }
+}
+
+async function readImageConfig(image) {
+  const { stdout } = await execDocker(["inspect", "--format", "{{json .Config}}", image], { timeoutMs: 10000 });
+  let cfg;
+  try {
+    cfg = JSON.parse(stdout.trim());
+  } catch {
+    throw new DockerError("DOCKER_BAD_OUTPUT", "unparseable image inspect output from docker CLI");
+  }
+  if (!cfg || typeof cfg !== "object") throw new DockerError("DOCKER_BAD_OUTPUT", "image inspect returned no config");
+  return {
+    cmd: Array.isArray(cfg.Cmd) ? cfg.Cmd.map(String) : null,
+    entrypoint: Array.isArray(cfg.Entrypoint) ? cfg.Entrypoint.map(String) : null,
+    env: Array.isArray(cfg.Env) ? cfg.Env.map(String) : [],
+    workingDir: typeof cfg.WorkingDir === "string" ? cfg.WorkingDir : "",
+  };
+}
+
+// Start (or restart) the sandbox for an already-assembled bundle.
+// Container stdout/stderr append to the runsc log file for the name.
+async function launchRunsc(name) {
+  const bundleDir = runscBundleDir(name);
+  const logPath = runscLogPath(name);
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  const fd = fs.openSync(logPath, "a");
+  let child;
+  try {
+    child = spawn(
+      runscBin(),
+      ["--network=none", "--ignore-cgroups", ...runscStateArgs(), "run", "--detach", "--bundle", bundleDir, name],
+      { detached: true, stdio: ["ignore", fd, fd], windowsHide: true },
+    );
+  } finally {
+    fs.closeSync(fd);
+  }
+  const code = await new Promise((resolvePromise) => {
+    child.on("error", () => resolvePromise(-1));
+    child.on("exit", (c) => resolvePromise(c === null ? -1 : c));
+  });
+  child.unref();
+  if (code !== 0) {
+    let tail = "";
+    try {
+      tail = trimErr(fs.readFileSync(logPath, "utf8").slice(-2000));
+    } catch { /* no log captured */ }
+    throw new DockerError("RUN_FAILED", `runsc failed to start container ${name}${tail ? `: ${tail}` : ""}`);
+  }
+}
+
+async function runViaRunsc({ image, name, env, cmd, entrypoint } = {}) {
+  validateImageRef(image);
+  if (!runscBin()) fail("RUNSC_UNAVAILABLE", "runsc binary not available on this host");
+  const cname = name !== undefined && name !== null && name !== ""
+    ? validateContainerName(name)
+    : `kiln-${crypto.randomBytes(6).toString("hex")}`;
+  const bundleDir = runscBundleDir(cname);
+  const rootfsDir = path.join(bundleDir, "rootfs");
+  fs.mkdirSync(rootfsDir, { recursive: true });
+  await exportImageRootfs(image, rootfsDir);
+  const cfg = await readImageConfig(image);
+  const entry = entrypoint !== undefined && entrypoint !== null
+    ? (Array.isArray(entrypoint) ? entrypoint.map(String) : [String(entrypoint)])
+    : cfg.entrypoint;
+  const command = cmd !== undefined && cmd !== null ? cmd.map(String) : cfg.cmd;
+  const args = [...(entry || []), ...(command || [])];
+  if (!args.length) {
+    fail("RUN_FAILED", `no command to run for image ${image}: the image sets no entrypoint/cmd and none was given`);
+  }
+  const envMap = new Map();
+  for (const line of cfg.env) {
+    const eq = line.indexOf("=");
+    if (eq > 0) envMap.set(line.slice(0, eq), line.slice(eq + 1));
+  }
+  if (env && typeof env === "object") {
+    for (const [key, value] of Object.entries(env)) {
+      validateEnvKey(key);
+      const v = String(value);
+      if (/[\r\n\0]/.test(v)) fail("BAD_ENV_VALUE", `env value for ${key} contains a newline`);
+      envMap.set(key, v);
+    }
+  }
+  // An image whose config carries no PATH at all (e.g. a plain
+  // `docker import` product) leaves bare command names unresolvable
+  // for runsc; seed the standard default PATH docker itself applies.
+  if (!envMap.has("PATH")) envMap.set("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+  // Generate the OCI spec with runsc itself (the host-proven shape),
+  // then patch in the image's real command, env and working dir.
+  await execRunsc(["spec"], { cwd: bundleDir, timeoutMs: 10000 });
+  const specPath = path.join(bundleDir, "config.json");
+  let spec;
+  try {
+    spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
+  } catch {
+    fail("RUN_FAILED", "runsc spec did not produce a readable config.json");
+  }
+  spec.process = spec.process || {};
+  spec.process.terminal = false;
+  spec.process.args = args;
+  spec.process.env = [...envMap.entries()].map(([k, v]) => `${k}=${v}`);
+  spec.process.cwd = cfg.workingDir || "/";
+  spec.root = { ...(spec.root || {}), path: rootfsDir, readonly: false };
+  spec.hostname = cname;
+  if (spec.linux && Array.isArray(spec.linux.namespaces)) {
+    // A namespace PATH in the spec is what the daemon's shim chokes on
+    // here; runsc's own spec carries none — keep it that way.
+    for (const ns of spec.linux.namespaces) {
+      if (ns && typeof ns === "object") delete ns.path;
+    }
+  }
+  fs.writeFileSync(specPath, JSON.stringify(spec, null, 2));
+  fs.writeFileSync(runscMetaPath(cname), JSON.stringify({
+    name: cname,
+    image,
+    runtime: "runsc-direct",
+    createdAt: new Date().toISOString(),
+  }, null, 2));
+  await launchRunsc(cname);
+  return { id: cname, name: cname, image, state: "running", runtime: "runsc-direct", ports: [] };
+}
+
+async function listRunscContainers() {
+  if (!runscBin()) return [];
+  let parsed;
+  try {
+    const { stdout } = await execRunsc([...runscStateArgs(), "list", "--format", "json"], { timeoutMs: 10000 });
+    parsed = JSON.parse(stdout.trim() || "null");
+  } catch {
+    return []; // runsc state is best-effort; docker state is the floor
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out = [];
+  for (const e of parsed) {
+    if (!e || typeof e !== "object" || !e.id) continue;
+    const id = String(e.id);
+    const meta = readRunscMeta(id);
+    out.push({
+      id,
+      name: id,
+      image: meta && meta.image ? String(meta.image) : "(runsc)",
+      state: String(e.status || e.state || ""),
+      status: String(e.status || e.state || ""),
+      ports: [],
+      labels: "",
+      runtime: "runsc-direct",
+      createdAt: e.created ? String(e.created) : "",
+    });
+  }
+  return out;
+}
+
+// Best-effort teardown of a runsc container's runtime state (its
+// bundle survives until removeContainer, so start/restart can relaunch).
+async function deleteRunscState(id, { force = false } = {}) {
+  const args = [...runscStateArgs(), "delete"];
+  if (force) args.push("--force");
+  args.push(id);
+  try {
+    await execRunsc(args, { timeoutMs: 30000 });
+  } catch (e) {
+    if (isNoSuchContainer(e) || /no such|not found|does not exist|unknown container/i.test(e instanceof Error ? e.message : "")) return;
+    throw e;
+  }
+}
+
 // --- engine surface --------------------------------------------------------
 
 export async function probe() {
@@ -156,9 +466,9 @@ export async function probe() {
     version = JSON.parse(stdout.trim());
   } catch (e) {
     if (e instanceof DockerError && (e.code === "DOCKER_UNAVAILABLE" || e.code === "DOCKER_TIMEOUT")) {
-      return { available: false, reason: e.message };
+      return { available: false, reason: e.message, execution: executionInfo() };
     }
-    return { available: false, reason: e instanceof Error ? e.message : "docker version failed" };
+    return { available: false, reason: e instanceof Error ? e.message : "docker version failed", execution: executionInfo() };
   }
   let info = null;
   try {
@@ -178,6 +488,7 @@ export async function probe() {
     containers: typeof info?.Containers === "number" ? info.Containers : null,
     containersRunning: typeof info?.ContainersRunning === "number" ? info.ContainersRunning : null,
     images: typeof info?.Images === "number" ? info.Images : null,
+    execution: executionInfo(),
   };
 }
 
@@ -197,7 +508,7 @@ export async function listContainers(all = true) {
   if (all) args.push("-a");
   args.push("--format", "{{json .}}");
   const { stdout } = await execDocker(args, { timeoutMs: 10000 });
-  return parseJsonLines(stdout, "ps").map((r) => ({
+  const dockerEntries = parseJsonLines(stdout, "ps").map((r) => ({
     id: r.ID || "",
     name: r.Names || "",
     image: r.Image || "",
@@ -205,17 +516,41 @@ export async function listContainers(all = true) {
     status: r.Status || "",
     ports: r.Ports || "",
     labels: r.Labels || "",
+    runtime: "docker",
     createdAt: r.CreatedAt || "",
   }));
+  // runsc-direct containers live outside the daemon; merge them after
+  // the docker entries, labeled. A docker container wins a name clash.
+  try {
+    const runscEntries = await listRunscContainers();
+    if (runscEntries.length) {
+      const dockerNames = new Set(dockerEntries.map((c) => c.name));
+      return [...dockerEntries, ...runscEntries.filter((c) => !dockerNames.has(c.name))];
+    }
+  } catch { /* runsc listing is best-effort; docker state is the floor */ }
+  return dockerEntries;
 }
 
 export async function containerLogs(id, tail = 200) {
   validateContainerId(id);
   const t = Math.max(1, Math.min(5000, Math.floor(Number(tail) || 200)));
-  const { stdout, stderr } = await execDocker(["logs", "--tail", String(t), id], { timeoutMs: 10000, maxBuffer: 4 * 1024 * 1024 });
-  let logs = stdout + stderr;
-  if (logs.length > 65536) logs = logs.slice(logs.length - 65536);
-  return { id, tail: t, logs };
+  try {
+    const { stdout, stderr } = await execDocker(["logs", "--tail", String(t), id], { timeoutMs: 10000, maxBuffer: 4 * 1024 * 1024 });
+    let logs = stdout + stderr;
+    if (logs.length > 65536) logs = logs.slice(logs.length - 65536);
+    return { id, tail: t, logs };
+  } catch (e) {
+    // A runsc-direct container has no docker logs; its output was
+    // captured to the runsc log file at launch. Serve that, labeled.
+    const logPath = runscLogPath(id);
+    if (fs.existsSync(logPath) && (isRunscContainer(id) || isNoSuchContainer(e))) {
+      const lines = fs.readFileSync(logPath, "utf8").split("\n");
+      let logs = lines.slice(-t).join("\n");
+      if (logs.length > 65536) logs = logs.slice(logs.length - 65536);
+      return { id, tail: t, logs, runtime: "runsc-direct" };
+    }
+    throw e;
+  }
 }
 
 export async function inspectContainer(id) {
@@ -247,7 +582,7 @@ export async function inspectContainer(id) {
   };
 }
 
-export function buildImage({ contextDir, tag, dockerfile, onLine, timeoutMs = 600000 } = {}) {
+function dockerBuildImage({ contextDir, tag, dockerfile, onLine, timeoutMs = 600000 } = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
     let stat;
     try {
@@ -314,7 +649,245 @@ export function buildImage({ contextDir, tag, dockerfile, onLine, timeoutMs = 60
   });
 }
 
-export async function runContainer({ image, name, env, ports, memoryMb, cpus, network, cmd } = {}) {
+// Build an image: docker build first. On hosts where the daemon's
+// build path is blocked (buildkit needs the same netns operations the
+// sandbox denies), a COPY-only Dockerfile can still be assembled for
+// real — export the base image's rootfs, apply the COPY/ADD steps to
+// it, and `docker import` the result with the Dockerfile's ENV / CMD /
+// ENTRYPOINT / WORKDIR as image config. That result is labeled
+// buildMethod:"import-assembly". A Dockerfile with RUN steps cannot be
+// assembled this way and fails with the reason stated, never silently.
+export async function buildImage(opts = {}) {
+  try {
+    const out = await dockerBuildImage(opts);
+    return { ...out, buildMethod: "docker" };
+  } catch (e) {
+    return importAssemblyBuild(opts, e);
+  }
+}
+
+// Parse just enough Dockerfile for import-assembly: FROM, COPY/ADD,
+// ENV, WORKDIR, CMD, ENTRYPOINT. Anything assembly cannot reproduce
+// faithfully is recorded in `unsupported` rather than faked; other
+// instructions (EXPOSE, LABEL, USER, ...) have no assembly equivalent
+// here and are ignored. COPY destinations are resolved against the
+// WORKDIR in effect at that line, as docker resolves them.
+export function parseDockerfile(text) {
+  const joined = String(text).replace(/\\\r?\n/g, " ");
+  const out = { from: null, fromCount: 0, copies: [], env: [], workdir: "", cmd: null, entrypoint: null, unsupported: [] };
+  const stages = new Set();
+  let workdirAbs = "/";
+  let sawWorkdir = false;
+  for (const rawLine of joined.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const m = /^([A-Za-z]+)\s+(.*)$/.exec(line);
+    if (!m) continue;
+    const instr = m[1].toUpperCase();
+    const rest = m[2].trim();
+    if (instr === "FROM") {
+      out.fromCount += 1;
+      const tokens = rest.split(/\s+/).filter((t) => !t.startsWith("--"));
+      const ref = tokens[0] || "";
+      if (out.fromCount > 1) {
+        out.unsupported.push("multi-stage Dockerfile (more than one FROM)");
+        continue;
+      }
+      if (/^scratch$/i.test(ref)) {
+        out.unsupported.push("FROM scratch has no base image to assemble from");
+        continue;
+      }
+      if (stages.has(ref.toLowerCase())) {
+        out.unsupported.push(`FROM ${ref} refers to an earlier build stage`);
+        continue;
+      }
+      out.from = ref;
+      const asIdx = tokens.findIndex((t) => /^as$/i.test(t));
+      if (asIdx >= 0 && tokens[asIdx + 1]) stages.add(tokens[asIdx + 1].toLowerCase());
+      continue;
+    }
+    if (instr === "COPY" || instr === "ADD") {
+      let r = rest;
+      const flags = [];
+      while (r.startsWith("--")) {
+        const sp = r.indexOf(" ");
+        if (sp === -1) break;
+        flags.push(r.slice(0, sp));
+        r = r.slice(sp + 1).trim();
+      }
+      if (flags.length) {
+        out.unsupported.push(`${instr} ${flags[0]} is not supported by import-assembly`);
+        continue;
+      }
+      let parts;
+      if (r.startsWith("[")) {
+        try {
+          parts = JSON.parse(r);
+        } catch {
+          out.unsupported.push(`${instr} with an unparseable JSON array form`);
+          continue;
+        }
+        if (!Array.isArray(parts) || parts.length < 2) {
+          out.unsupported.push(`${instr} needs at least one source and a destination`);
+          continue;
+        }
+        parts = parts.map(String);
+      } else {
+        parts = r.split(/\s+/).filter(Boolean);
+      }
+      if (parts.length < 2) {
+        out.unsupported.push(`${instr} needs at least one source and a destination`);
+        continue;
+      }
+      if (instr === "ADD" && parts.slice(0, -1).some((s) => /^https?:\/\//i.test(s))) {
+        out.unsupported.push("ADD from a remote URL is not supported by import-assembly");
+        continue;
+      }
+      const rawDest = parts[parts.length - 1];
+      const destAbs = (rawDest.startsWith("/") ? path.posix.normalize(rawDest) : path.posix.join(workdirAbs, rawDest)).replace(/\/+$/, "") || "/";
+      out.copies.push({
+        sources: parts.slice(0, -1),
+        dest: destAbs,
+        destIsDir: rawDest.endsWith("/") || rawDest === "." || rawDest.endsWith("/.") || parts.length > 2,
+      });
+      continue;
+    }
+    if (instr === "ENV") {
+      const tokens = rest.split(/\s+/);
+      if (tokens[0] && tokens[0].includes("=")) {
+        for (const t of tokens) {
+          const eq = t.indexOf("=");
+          if (eq > 0) out.env.push([t.slice(0, eq), t.slice(eq + 1)]);
+        }
+      } else if (tokens[0]) {
+        out.env.push([tokens[0], rest.slice(tokens[0].length).trim()]);
+      }
+      continue;
+    }
+    if (instr === "WORKDIR") {
+      const w = rest.split(/\s+/)[0];
+      if (w) {
+        workdirAbs = w.startsWith("/") ? path.posix.normalize(w) : path.posix.join(workdirAbs, w);
+        sawWorkdir = true;
+        out.workdir = workdirAbs;
+      }
+      continue;
+    }
+    if (instr === "CMD" || instr === "ENTRYPOINT") {
+      let value;
+      if (rest.startsWith("[")) {
+        try {
+          value = JSON.parse(rest).map(String);
+        } catch {
+          value = ["/bin/sh", "-c", rest];
+        }
+      } else {
+        value = ["/bin/sh", "-c", rest];
+      }
+      if (instr === "CMD") out.cmd = value;
+      else out.entrypoint = value;
+      continue;
+    }
+    // RUN is rejected by the caller before parsing; every other
+    // instruction is ignored rather than faked.
+  }
+  if (!sawWorkdir) out.workdir = "";
+  return out;
+}
+
+function applyImportCopy(contextDir, rootfsDir, copy) {
+  const destAbs = path.resolve(rootfsDir, `.${copy.dest}`);
+  if (destAbs !== rootfsDir && !destAbs.startsWith(rootfsDir + path.sep)) {
+    fail("BAD_DOCKERFILE", `COPY destination escapes the image rootfs: ${copy.dest}`);
+  }
+  for (const src of copy.sources) {
+    if (/[*?[]/.test(src)) fail("BUILD_UNSUPPORTED", `COPY source ${JSON.stringify(src)} uses a wildcard, which import-assembly does not expand`);
+    const srcAbs = path.resolve(contextDir, src);
+    if (srcAbs !== path.resolve(contextDir) && !srcAbs.startsWith(path.resolve(contextDir) + path.sep)) {
+      fail("BAD_DOCKERFILE", `COPY source escapes the build context: ${src}`);
+    }
+    let stat;
+    try {
+      stat = fs.statSync(srcAbs);
+    } catch {
+      fail("BUILD_FAILED", `COPY source not found in the build context: ${src}`);
+    }
+    if (stat.isDirectory()) {
+      // docker copies a directory's CONTENTS into the destination.
+      fs.mkdirSync(destAbs, { recursive: true });
+      fs.cpSync(srcAbs, destAbs, { recursive: true });
+    } else {
+      const destIsDir = copy.destIsDir || (fs.existsSync(destAbs) && fs.statSync(destAbs).isDirectory());
+      const target = destIsDir ? path.join(destAbs, path.basename(srcAbs)) : destAbs;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(srcAbs, target);
+    }
+  }
+}
+
+function tarCreate(rootfsDir, tarPath) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    execFile("tar", ["-cf", tarPath, "-C", rootfsDir, "."], { timeout: 120000, windowsHide: true }, (err, _stdout, stderr) => {
+      if (err) return rejectPromise(new DockerError("BUILD_FAILED", trimErr(stderr) || `tar exited ${err.code}`));
+      resolvePromise();
+    });
+  });
+}
+
+async function importAssemblyBuild(opts, originalError) {
+  const { contextDir, tag, dockerfile, onLine } = opts || {};
+  const emit = (line) => {
+    if (typeof onLine === "function") {
+      try { onLine(line); } catch { /* a listener must not kill the build */ }
+    }
+  };
+  let dfText;
+  try {
+    const dfPath = dockerfile ? path.join(contextDir, validateDockerfileRel(dockerfile)) : path.join(contextDir, "Dockerfile");
+    dfText = fs.readFileSync(dfPath, "utf8");
+  } catch {
+    throw originalError; // no readable Dockerfile: the docker error is the honest one
+  }
+  if (/^\s*RUN\s/im.test(dfText)) {
+    const note = "RUN steps cannot execute on this host yet (sandbox blocks container start through the daemon); COPY-only builds are supported";
+    if (originalError instanceof DockerError) throw new DockerError(originalError.code, `${originalError.message} — ${note}`);
+    throw new DockerError("BUILD_FAILED", `${originalError instanceof Error ? originalError.message : "docker build failed"} — ${note}`);
+  }
+  const parsed = parseDockerfile(dfText);
+  if (!parsed.from || parsed.unsupported.length) {
+    const why = parsed.unsupported[0] || "no FROM instruction to assemble from";
+    throw new DockerError("BUILD_UNSUPPORTED", `import-assembly cannot build this Dockerfile: ${why} (docker build said: ${originalError instanceof Error ? originalError.message : "docker build failed"})`);
+  }
+  validateImageRef(parsed.from);
+  emit(`kiln: docker build could not run on this host (${trimErr(originalError instanceof Error ? originalError.message : "")}); assembling ${tag} by import instead (COPY-only Dockerfile)`);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-import-assembly-"));
+  const rootfsDir = path.join(tmpDir, "rootfs");
+  fs.mkdirSync(rootfsDir, { recursive: true });
+  try {
+    await exportImageRootfs(parsed.from, rootfsDir);
+    for (const copy of parsed.copies) applyImportCopy(contextDir, rootfsDir, copy);
+    const changes = [];
+    if (parsed.workdir) changes.push(`WORKDIR ${parsed.workdir}`);
+    for (const [k, v] of parsed.env) {
+      validateEnvKey(k);
+      changes.push(`ENV ${k}=${v}`);
+    }
+    if (parsed.cmd) changes.push(`CMD ${JSON.stringify(parsed.cmd)}`);
+    if (parsed.entrypoint) changes.push(`ENTRYPOINT ${JSON.stringify(parsed.entrypoint)}`);
+    const tarPath = path.join(tmpDir, "rootfs.tar");
+    await tarCreate(rootfsDir, tarPath);
+    const importArgs = ["import"];
+    for (const c of changes) importArgs.push("-c", c);
+    importArgs.push(tarPath, tag);
+    await execDocker(importArgs, { timeoutMs: 120000 });
+    emit(`kiln: assembled ${tag} from ${parsed.from} via import-assembly (${parsed.copies.length} copy step${parsed.copies.length === 1 ? "" : "s"})`);
+    return { tag, ok: true, buildMethod: "import-assembly" };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+export async function runContainer({ image, name, env, ports, memoryMb, cpus, network, cmd, entrypoint } = {}) {
   validateImageRef(image);
   const args = [
     "run", "-d",
@@ -357,26 +930,61 @@ export async function runContainer({ image, name, env, ports, memoryMb, cpus, ne
       args.push(s);
     }
   }
-  const { stdout } = await execDocker(args, { timeoutMs: 30000 });
-  return { id: stdout.trim().split("\n").pop() || "", image };
+  let stdout;
+  try {
+    ({ stdout } = await execDocker(args, { timeoutMs: 30000 }));
+  } catch (e) {
+    // The daemon's start path is blocked on this host class (netns /
+    // keyring class failures): fall back to runsc-direct, LABELED.
+    // Any other docker failure propagates untouched. Ports, memory,
+    // cpus and network from the request cannot be honored by the
+    // fallback and are NOT silently claimed: the result carries
+    // ports: [] and the runsc-direct runtime label.
+    if (runscBin() && e instanceof DockerError && RUN_FALLBACK_RE.test(e.message)) {
+      return runViaRunsc({ image, name, env, cmd, entrypoint });
+    }
+    throw e;
+  }
+  return { id: stdout.trim().split("\n").pop() || "", image, runtime: "docker" };
 }
 
 export async function startContainer(id) {
   validateContainerId(id);
-  await execDocker(["start", id], { timeoutMs: 30000 });
-  return { id, state: "started" };
+  try {
+    await execDocker(["start", id], { timeoutMs: 30000 });
+    return { id, state: "started" };
+  } catch (e) {
+    if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
+    await launchRunsc(validateContainerName(id));
+    return { id, state: "started", runtime: "runsc-direct" };
+  }
 }
 
 export async function stopContainer(id) {
   validateContainerId(id);
-  await execDocker(["stop", id], { timeoutMs: 60000 });
-  return { id, state: "stopped" };
+  try {
+    await execDocker(["stop", id], { timeoutMs: 60000 });
+    return { id, state: "stopped" };
+  } catch (e) {
+    if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
+    await execRunsc([...runscStateArgs(), "kill", id, "SIGTERM"], { timeoutMs: 30000 }).catch(() => {});
+    await deleteRunscState(id);
+    return { id, state: "stopped", runtime: "runsc-direct" };
+  }
 }
 
 export async function restartContainer(id) {
   validateContainerId(id);
-  await execDocker(["restart", id], { timeoutMs: 60000 });
-  return { id, state: "restarted" };
+  try {
+    await execDocker(["restart", id], { timeoutMs: 60000 });
+    return { id, state: "restarted" };
+  } catch (e) {
+    if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
+    await execRunsc([...runscStateArgs(), "kill", id, "SIGTERM"], { timeoutMs: 30000 }).catch(() => {});
+    await deleteRunscState(id);
+    await launchRunsc(validateContainerName(id));
+    return { id, state: "restarted", runtime: "runsc-direct" };
+  }
 }
 
 export async function removeContainer(id, { force = false } = {}) {
@@ -384,8 +992,16 @@ export async function removeContainer(id, { force = false } = {}) {
   const args = ["rm"];
   if (force) args.push("-f");
   args.push(id);
-  await execDocker(args, { timeoutMs: 30000 });
-  return { id, removed: true };
+  try {
+    await execDocker(args, { timeoutMs: 30000 });
+    return { id, removed: true };
+  } catch (e) {
+    if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
+    await deleteRunscState(id, { force: true });
+    fs.rmSync(runscBundleDir(id), { recursive: true, force: true });
+    fs.rmSync(runscLogPath(id), { force: true });
+    return { id, removed: true, runtime: "runsc-direct" };
+  }
 }
 
 // --- build contexts from the forge -----------------------------------------

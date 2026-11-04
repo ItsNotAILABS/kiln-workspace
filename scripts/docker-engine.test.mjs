@@ -13,12 +13,14 @@ import {
   inspectContainer,
   listContainers,
   listImages,
+  parseDockerfile,
   probe,
   removeContainer,
   requireDockerfile,
   resolveBuildContext,
   runContainer,
   startContainer,
+  stopContainer,
   validateEnvKey,
   validateOwner,
   validatePortMapping,
@@ -289,6 +291,364 @@ test("resolveBuildContext materializes a forge repo and cleans up", async () => 
     if (savedGitDir === undefined) delete process.env.KILN_SWARM_GIT_DIR;
     else process.env.KILN_SWARM_GIT_DIR = savedGitDir;
   }
+});
+
+// --- runsc-direct fallback -------------------------------------------------
+// A fake docker whose daemon RUN path fails the way this sandbox fails
+// it (namespace/keyring class), while create/export/inspect work — so
+// the engine can still assemble OCI bundles from images. Its lifecycle
+// verbs answer "No such container", because runsc-direct containers
+// are not the daemon's. build fails (buildkit hits the same wall).
+const FAKE_DOCKER_NSFAIL = `#!/bin/sh
+LOG="\${FAKE_DOCKER_ARGV_LOG:-}"
+if [ -n "$LOG" ]; then
+  printf '%s\\n' "$*" >> "$LOG"
+fi
+cmd="$1"
+case "$cmd" in
+  version)
+    echo '{"Client":{"Version":"29.1.3","ApiVersion":"1.52"},"Server":{"Version":"29.1.3","ApiVersion":"1.52","Os":"linux","Arch":"amd64"}}'
+    ;;
+  info)
+    echo '{"Driver":"vfs","Containers":2,"ContainersRunning":0,"Images":1,"OperatingSystem":"Ubuntu 24.04"}'
+    ;;
+  images)
+    echo '{"ID":"sha256:ccc333","Repository":"kiln/demo","Tag":"latest","Size":"12.9MB","CreatedAt":"2026-11-03 10:00:00 +0000 UTC"}'
+    ;;
+  ps)
+    echo '{"ID":"c0ffee123456","Image":"kiln/demo:latest","Names":"demo-web","State":"running","Status":"Up 2 hours","Ports":"","Labels":"kiln.managed=1","CreatedAt":"2026-11-03 09:00:00 +0000 UTC"}'
+    ;;
+  run)
+    echo "Error response from daemon: failed to create task for container: OCI runtime create failed: unable to join session keyring: operation not permitted while joining namespace" 1>&2
+    exit 1
+    ;;
+  create)
+    echo "createdcontainer123456"
+    ;;
+  export)
+    head -c 1024 /dev/zero
+    ;;
+  inspect)
+    if [ "$2" = "--format" ]; then
+      echo '{"Cmd":["/bin/sh","-c","echo hello-from-runsc"],"Entrypoint":null,"Env":["PATH=/usr/local/bin"],"WorkingDir":"/work"}'
+    else
+      echo "Error response from daemon: No such container: fake" 1>&2
+      exit 1
+    fi
+    ;;
+  logs)
+    echo "Error response from daemon: No such container: fake" 1>&2
+    exit 1
+    ;;
+  build)
+    echo "ERROR: failed to solve: bind-mount /proc/1/ns/net: operation not permitted" 1>&2
+    exit 1
+    ;;
+  import)
+    echo "sha256:imported123456"
+    ;;
+  start|stop|restart|rm)
+    echo "Error response from daemon: No such container: fake" 1>&2
+    exit 1
+    ;;
+  *)
+    echo "fake docker (nsfail): unknown command $cmd" 1>&2
+    exit 1
+    ;;
+esac
+exit 0
+`;
+
+// A fake docker whose run fails for an ordinary, non-namespace reason:
+// the fallback must NOT engage for this class.
+const FAKE_DOCKER_PLAINFAIL = `#!/bin/sh
+cmd="$1"
+case "$cmd" in
+  run)
+    echo "Error response from daemon: No such image: nope:latest" 1>&2
+    exit 1
+    ;;
+  *)
+    echo "fake docker (plainfail): unknown command $cmd" 1>&2
+    exit 1
+    ;;
+esac
+exit 0
+`;
+
+// A fake runsc: records argv, emulates spec/run/list/kill/delete with a
+// state file of "running" container names (one per line).
+const FAKE_RUNSC = `#!/bin/sh
+LOG="\${FAKE_RUNSC_ARGV_LOG:-}"
+if [ -n "$LOG" ]; then
+  printf '%s\\n' "$*" >> "$LOG"
+fi
+STATE="\${FAKE_RUNSC_STATE:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --root) shift 2 ;;
+    --network=*|--platform=*|--debug-log=*|--log-format=*) shift ;;
+    --ignore-cgroups|--debug|--rootless) shift ;;
+    *) break ;;
+  esac
+done
+cmd="$1"
+if [ $# -gt 0 ]; then shift; fi
+case "$cmd" in
+  spec)
+    cat > config.json <<'JSON'
+{"ociVersion":"1.0.2","process":{"terminal":false,"user":{"uid":0,"gid":0},"args":["sh"],"env":[],"cwd":"/","capabilities":{"bounding":["CAP_CHOWN"]}},"root":{"path":"rootfs","readonly":true},"hostname":"","linux":{"namespaces":[{"type":"pid"},{"type":"network"},{"type":"ipc"},{"type":"uts"},{"type":"mount"}]},"mounts":[]}
+JSON
+    ;;
+  run)
+    while [ $# -gt 1 ]; do shift; done
+    name="$1"
+    echo "fake runsc: started $name"
+    if [ -n "$STATE" ]; then printf '%s\\n' "$name" >> "$STATE"; fi
+    ;;
+  list)
+    if [ -n "$STATE" ] && [ -f "$STATE" ]; then
+      printf '['
+      first=1
+      while IFS= read -r n; do
+        [ -n "$n" ] || continue
+        if [ $first -eq 1 ]; then first=0; else printf ','; fi
+        printf '{"id":"%s","pid":4242,"status":"running","bundle":"/fake/%s","created":"2026-11-04T00:00:00Z"}' "$n" "$n"
+      done < "$STATE"
+      printf ']\\n'
+    else
+      echo 'null'
+    fi
+    ;;
+  kill)
+    echo "fake runsc: killed $1"
+    ;;
+  delete)
+    id=""
+    for a in "$@"; do
+      case "$a" in
+        --*) ;;
+        *) id="$a" ;;
+      esac
+    done
+    if [ -n "$STATE" ] && [ -f "$STATE" ]; then
+      grep -vx "$id" "$STATE" > "$STATE.tmp" || true
+      mv "$STATE.tmp" "$STATE"
+    fi
+    echo "fake runsc: deleted $id"
+    ;;
+  *)
+    echo "fake runsc: unknown command $cmd" 1>&2
+    exit 1
+    ;;
+esac
+exit 0
+`;
+
+function writeFake(dir, name, body) {
+  const p = path.join(dir, name);
+  fs.writeFileSync(p, body, { mode: 0o755 });
+  return p;
+}
+
+function swapEnv(vars) {
+  const saved = {};
+  for (const [k, v] of Object.entries(vars)) {
+    saved[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  return () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+}
+
+test("runContainer labels a plain docker run with runtime docker", async () => {
+  const out = await runContainer({ image: "alpine:3.20" });
+  assert.equal(out.runtime, "docker");
+});
+
+test("probe reports the runsc-direct execution availability", async () => {
+  const p = await probe();
+  assert.ok(p.execution && typeof p.execution.runscDirect === "boolean");
+  if (p.execution.runscDirect) assert.match(p.execution.note, /runsc-direct/);
+});
+
+test("runContainer falls back to runsc-direct on a namespace-class daemon failure", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-runsc-test-"));
+  const nsfailPath = writeFake(dir, "docker-nsfail", FAKE_DOCKER_NSFAIL);
+  const runscPath = writeFake(dir, "runsc-fake", FAKE_RUNSC);
+  const runscArgv = path.join(dir, "runsc-argv.log");
+  const restore = swapEnv({
+    KILN_DOCKER_BIN: nsfailPath,
+    KILN_RUNSC_BIN: runscPath,
+    KILN_RUNSC_STATE: path.join(dir, "runsc-state"),
+    FAKE_RUNSC_ARGV_LOG: runscArgv,
+    FAKE_RUNSC_STATE: path.join(dir, "running.txt"),
+  });
+  try {
+    const out = await runContainer({ image: "kiln/demo:latest", name: "kiln-fallback-1", env: { MODE: "prod" } });
+    assert.equal(out.runtime, "runsc-direct");
+    assert.equal(out.id, "kiln-fallback-1");
+    assert.equal(out.name, "kiln-fallback-1");
+    assert.equal(out.state, "running");
+    assert.deepEqual(out.ports, []);
+    const runscLog = fs.readFileSync(runscArgv, "utf8");
+    assert.match(runscLog, /--network=none/, "runsc launched with the sandbox-safe network mode");
+    assert.match(runscLog, /run --detach --bundle/, "runsc run --detach on the assembled bundle");
+    // The bundle's spec came from runsc spec, patched with the image's
+    // real command/env/cwd — not the spec defaults.
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, "runsc-state", "bundles", "kiln-fallback-1", "config.json"), "utf8"));
+    assert.deepEqual(cfg.process.args, ["/bin/sh", "-c", "echo hello-from-runsc"]);
+    assert.ok(cfg.process.env.includes("PATH=/usr/local/bin"), "image env carried into the spec");
+    assert.ok(cfg.process.env.includes("MODE=prod"), "request env wins in the spec");
+    assert.equal(cfg.process.cwd, "/work");
+    assert.equal(cfg.root.readonly, false);
+    assert.ok(cfg.root.path.endsWith(path.join("bundles", "kiln-fallback-1", "rootfs")));
+    const netNs = cfg.linux.namespaces.find((n) => n.type === "network");
+    assert.ok(netNs && !("path" in netNs), "spec network namespace carries no path");
+    // Listing merges the runsc container, labeled, next to docker's.
+    const containers = await listContainers(true);
+    const entry = containers.find((c) => c.name === "kiln-fallback-1");
+    assert.ok(entry, "runsc-direct container appears in listContainers");
+    assert.equal(entry.runtime, "runsc-direct");
+    assert.equal(entry.image, "kiln/demo:latest");
+    assert.equal(entry.state, "running");
+    assert.equal(containers.find((c) => c.name === "demo-web").runtime, "docker");
+    // Logs come from the captured runsc log file, labeled.
+    const logs = await containerLogs("kiln-fallback-1", 50);
+    assert.match(logs.logs, /fake runsc: started kiln-fallback-1/);
+    assert.equal(logs.runtime, "runsc-direct");
+    // Stop drives runsc kill + delete and drops it from the listing.
+    const stopped = await stopContainer("kiln-fallback-1");
+    assert.equal(stopped.state, "stopped");
+    assert.equal(stopped.runtime, "runsc-direct");
+    assert.match(fs.readFileSync(runscArgv, "utf8"), /kill kiln-fallback-1 SIGTERM/);
+    const afterStop = await listContainers(true);
+    assert.ok(!afterStop.some((c) => c.name === "kiln-fallback-1"), "stopped runsc container leaves the listing");
+    // Remove tears the bundle down.
+    const removed = await removeContainer("kiln-fallback-1");
+    assert.equal(removed.removed, true);
+    assert.equal(removed.runtime, "runsc-direct");
+    assert.ok(!fs.existsSync(path.join(dir, "runsc-state", "bundles", "kiln-fallback-1")), "bundle removed");
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runContainer does NOT fall back when docker fails for an ordinary reason", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-runsc-plainfail-"));
+  const plainPath = writeFake(dir, "docker-plainfail", FAKE_DOCKER_PLAINFAIL);
+  const runscPath = writeFake(dir, "runsc-fake", FAKE_RUNSC);
+  const runscArgv = path.join(dir, "runsc-argv.log");
+  const restore = swapEnv({
+    KILN_DOCKER_BIN: plainPath,
+    KILN_RUNSC_BIN: runscPath,
+    KILN_RUNSC_STATE: path.join(dir, "runsc-state"),
+    FAKE_RUNSC_ARGV_LOG: runscArgv,
+    FAKE_RUNSC_STATE: path.join(dir, "running.txt"),
+  });
+  try {
+    await assert.rejects(
+      runContainer({ image: "nope:latest" }),
+      (e) => e instanceof DockerError && e.code === "DOCKER_FAILED" && /No such image/.test(e.message),
+    );
+    assert.ok(!fs.existsSync(runscArgv), "runsc was never invoked for a non-namespace failure");
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("buildImage falls back to import-assembly for a COPY-only Dockerfile", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-import-assembly-"));
+  const nsfailPath = writeFake(dir, "docker-nsfail", FAKE_DOCKER_NSFAIL);
+  const restore = swapEnv({ KILN_DOCKER_BIN: nsfailPath });
+  const ctx = path.join(dir, "ctx");
+  fs.mkdirSync(path.join(ctx, "data"), { recursive: true });
+  fs.writeFileSync(path.join(ctx, "Dockerfile"), [
+    "FROM kiln/base:latest",
+    "WORKDIR /app",
+    "COPY hello.txt .",
+    "COPY data /data/",
+    "ENV MODE=prod",
+    'CMD ["cat", "/app/hello.txt"]',
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(ctx, "hello.txt"), "hello world\n");
+  fs.writeFileSync(path.join(ctx, "data", "x.txt"), "x\n");
+  try {
+    const beforeCount = argvLines().length;
+    const lines = [];
+    const out = await buildImage({ contextDir: ctx, tag: "kiln/assembled:latest", onLine: (l) => lines.push(l) });
+    assert.equal(out.ok, true);
+    assert.equal(out.buildMethod, "import-assembly");
+    assert.ok(lines.some((l) => l.includes("import-assembly")), "job log names the assembly method");
+    const importLine = argvLines().slice(beforeCount).find((l) => l.startsWith("import"));
+    assert.ok(importLine, "docker import invocation recorded");
+    assert.ok(importLine.includes("-c WORKDIR /app"));
+    assert.ok(importLine.includes("-c ENV MODE=prod"));
+    assert.ok(importLine.includes('-c CMD ["cat","/app/hello.txt"]'));
+    assert.ok(importLine.trim().endsWith("kiln/assembled:latest"), "import targets the requested tag");
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("buildImage states the honest limit when the Dockerfile has RUN steps", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-import-runsteps-"));
+  const nsfailPath = writeFake(dir, "docker-nsfail", FAKE_DOCKER_NSFAIL);
+  const restore = swapEnv({ KILN_DOCKER_BIN: nsfailPath });
+  const ctx = path.join(dir, "ctx");
+  fs.mkdirSync(ctx, { recursive: true });
+  fs.writeFileSync(path.join(ctx, "Dockerfile"), "FROM kiln/base:latest\nRUN echo hi\nCOPY hello.txt .\n");
+  fs.writeFileSync(path.join(ctx, "hello.txt"), "hello\n");
+  try {
+    await assert.rejects(
+      buildImage({ contextDir: ctx, tag: "kiln/nope:latest" }),
+      (e) => e instanceof DockerError && e.code === "BUILD_FAILED" && /RUN steps cannot execute on this host yet/.test(e.message),
+    );
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("parseDockerfile resolves copies against WORKDIR and flags what assembly cannot do", () => {
+  const parsed = parseDockerfile([
+    "FROM kiln/base:1 AS base",
+    "WORKDIR /srv",
+    "COPY a.txt .",
+    "COPY b.txt c.txt /files/",
+    "ENV X=1 Y=two",
+    "ENV GREETING hello world",
+    "CMD echo hi",
+    'ENTRYPOINT ["/bin/run"]',
+    "",
+  ].join("\n"));
+  assert.equal(parsed.from, "kiln/base:1");
+  assert.equal(parsed.workdir, "/srv");
+  assert.equal(parsed.copies.length, 2);
+  assert.equal(parsed.copies[0].dest, "/srv");
+  assert.equal(parsed.copies[0].destIsDir, true);
+  assert.equal(parsed.copies[1].dest, "/files");
+  assert.deepEqual(parsed.copies[1].sources, ["b.txt", "c.txt"]);
+  assert.deepEqual(parsed.env, [["X", "1"], ["Y", "two"], ["GREETING", "hello world"]]);
+  assert.deepEqual(parsed.cmd, ["/bin/sh", "-c", "echo hi"]);
+  assert.deepEqual(parsed.entrypoint, ["/bin/run"]);
+  assert.deepEqual(parsed.unsupported, []);
+
+  const multi = parseDockerfile("FROM a:1\nFROM b:2\n");
+  assert.ok(multi.unsupported.length > 0, "multi-stage is flagged, not faked");
+  const scratch = parseDockerfile("FROM scratch\nCOPY a.txt .\n");
+  assert.ok(scratch.unsupported.some((u) => /scratch/.test(u)));
+  const staged = parseDockerfile("FROM a:1 AS base\nCOPY --from=base /x /y\n");
+  assert.ok(staged.unsupported.some((u) => /--from/.test(u)));
 });
 
 test("requireDockerfile: typed NO_DOCKERFILE and confined relative paths", () => {
