@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { before, after } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   DockerError,
@@ -403,6 +404,10 @@ JSON
   run)
     while [ $# -gt 1 ]; do shift; done
     name="$1"
+    if [ -n "\${FAKE_RUNSC_FAIL_RUN:-}" ]; then
+      echo "running container: creating container: cannot create gofer process: gofer: error setting namespace of type network and path \\"/proc/self/fd/14\\": operation not permitted" 1>&2
+      exit 1
+    fi
     echo "fake runsc: started $name"
     if [ -n "$STATE" ]; then printf '%s\\n' "$name" >> "$STATE"; fi
     ;;
@@ -649,6 +654,165 @@ test("parseDockerfile resolves copies against WORKDIR and flags what assembly ca
   assert.ok(scratch.unsupported.some((u) => /scratch/.test(u)));
   const staged = parseDockerfile("FROM a:1 AS base\nCOPY --from=base /x /y\n");
   assert.ok(staged.unsupported.some((u) => /--from/.test(u)));
+});
+
+// --- operator-context runner queue -------------------------------------------
+// When the launch fails with the host-context class (the gofer's
+// namespace setup denied in the CALLER's context), the engine queues
+// the prepared bundle for scripts/runsc-runner.mjs and reports the run
+// honestly as "queued" until a runner executes it.
+
+test("runContainer queues for the operator runner when the caller's context blocks the launch", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-runsc-queue-"));
+  const nsfailPath = writeFake(dir, "docker-nsfail", FAKE_DOCKER_NSFAIL);
+  const runscPath = writeFake(dir, "runsc-fake", FAKE_RUNSC);
+  const stateDir = path.join(dir, "runsc-state");
+  const restore = swapEnv({
+    KILN_DOCKER_BIN: nsfailPath,
+    KILN_RUNSC_BIN: runscPath,
+    KILN_RUNSC_STATE: stateDir,
+    FAKE_RUNSC_ARGV_LOG: path.join(dir, "runsc-argv.log"),
+    FAKE_RUNSC_STATE: path.join(dir, "running.txt"),
+    FAKE_RUNSC_FAIL_RUN: "1",
+    RUNSC_RUNNER_WAIT_MS: "250",
+  });
+  try {
+    const out = await runContainer({ image: "kiln/demo:latest", name: "kiln-queued-1" });
+    assert.equal(out.runtime, "runsc-direct");
+    assert.equal(out.state, "queued");
+    assert.deepEqual(out.ports, []);
+    assert.match(out.note, /operator-context runner/);
+    // The pending request is on disk for the runner, with the bundle.
+    const pendingFile = path.join(stateDir, "queue", "pending", "kiln-queued-1.json");
+    assert.ok(fs.existsSync(pendingFile), "pending request written for the runner");
+    const pending = JSON.parse(fs.readFileSync(pendingFile, "utf8"));
+    assert.equal(pending.name, "kiln-queued-1");
+    assert.equal(pending.image, "kiln/demo:latest");
+    assert.ok(pending.bundleDir.endsWith(path.join("bundles", "kiln-queued-1")));
+    assert.ok(pending.logFile.endsWith(path.join("logs", "kiln-queued-1.log")));
+    assert.ok(pending.requestedAt, "pending carries requestedAt");
+    // The listing shows it as queued, labeled.
+    const containers = await listContainers(true);
+    const entry = containers.find((c) => c.name === "kiln-queued-1");
+    assert.ok(entry, "queued container appears in listContainers");
+    assert.equal(entry.state, "queued");
+    assert.equal(entry.runtime, "runsc-direct");
+    assert.equal(entry.image, "kiln/demo:latest");
+    // Logs serve the failed direct launch's captured output, labeled.
+    const logs = await containerLogs("kiln-queued-1", 50);
+    assert.match(logs.logs, /operation not permitted/);
+    assert.equal(logs.runtime, "runsc-direct");
+    // Stop on a queued, never-executed name is a dequeue.
+    const stopped = await stopContainer("kiln-queued-1");
+    assert.equal(stopped.state, "dequeued");
+    assert.equal(stopped.runtime, "runsc-direct");
+    assert.ok(!fs.existsSync(pendingFile), "dequeue clears the pending request");
+    const afterStop = await listContainers(true);
+    assert.ok(!afterStop.some((c) => c.name === "kiln-queued-1"), "dequeued container leaves the listing");
+    // Remove tears the bundle down.
+    const removed = await removeContainer("kiln-queued-1");
+    assert.equal(removed.removed, true);
+    assert.equal(removed.runtime, "runsc-direct");
+    assert.ok(!fs.existsSync(path.join(stateDir, "bundles", "kiln-queued-1")), "bundle removed");
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runContainer resolves as running when a runner result lands during the wait", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-runsc-queue-run-"));
+  const nsfailPath = writeFake(dir, "docker-nsfail", FAKE_DOCKER_NSFAIL);
+  const runscPath = writeFake(dir, "runsc-fake", FAKE_RUNSC);
+  const stateDir = path.join(dir, "runsc-state");
+  const restore = swapEnv({
+    KILN_DOCKER_BIN: nsfailPath,
+    KILN_RUNSC_BIN: runscPath,
+    KILN_RUNSC_STATE: stateDir,
+    FAKE_RUNSC_ARGV_LOG: path.join(dir, "runsc-argv.log"),
+    FAKE_RUNSC_STATE: path.join(dir, "running.txt"),
+    FAKE_RUNSC_FAIL_RUN: "1",
+    RUNSC_RUNNER_WAIT_MS: "5000",
+  });
+  try {
+    const resultFile = path.join(stateDir, "queue", "results", "kiln-queued-2.json");
+    const timer = setTimeout(() => {
+      fs.mkdirSync(path.dirname(resultFile), { recursive: true });
+      fs.writeFileSync(resultFile, JSON.stringify({
+        name: "kiln-queued-2",
+        state: "running",
+        pid: 4242,
+        startedAt: new Date().toISOString(),
+      }));
+    }, 600);
+    let out;
+    try {
+      out = await runContainer({ image: "kiln/demo:latest", name: "kiln-queued-2" });
+    } finally {
+      clearTimeout(timer);
+    }
+    assert.equal(out.runtime, "runsc-direct");
+    assert.equal(out.state, "running");
+    // The queue entry now reports the runner's state, not "queued".
+    const containers = await listContainers(true);
+    const entry = containers.find((c) => c.name === "kiln-queued-2");
+    assert.ok(entry, "runner-executed container appears in listContainers");
+    assert.equal(entry.state, "running");
+    assert.equal(entry.runtime, "runsc-direct");
+    const removed = await removeContainer("kiln-queued-2");
+    assert.equal(removed.removed, true);
+    assert.ok(!fs.existsSync(resultFile), "remove clears the queue result");
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runsc-runner --once executes a queued request and writes a running result", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-runsc-runner-"));
+  const runscPath = writeFake(dir, "runsc-fake", FAKE_RUNSC);
+  const runscArgv = path.join(dir, "runsc-argv.log");
+  const stateDir = path.join(dir, "runsc-state");
+  const bundleDir = path.join(stateDir, "bundles", "queued-runner-1");
+  fs.mkdirSync(bundleDir, { recursive: true });
+  fs.writeFileSync(path.join(bundleDir, "meta.json"), JSON.stringify({
+    name: "queued-runner-1",
+    image: "kiln/demo:latest",
+    runtime: "runsc-direct",
+    createdAt: new Date().toISOString(),
+  }));
+  fs.writeFileSync(path.join(bundleDir, "config.json"), "{}");
+  const pendingDir = path.join(stateDir, "queue", "pending");
+  fs.mkdirSync(pendingDir, { recursive: true });
+  fs.writeFileSync(path.join(pendingDir, "queued-runner-1.json"), JSON.stringify({
+    name: "queued-runner-1",
+    image: "kiln/demo:latest",
+    bundleDir,
+    logFile: path.join(stateDir, "logs", "queued-runner-1.log"),
+    requestedAt: new Date().toISOString(),
+  }));
+  const runnerPath = fileURLToPath(new URL("./runsc-runner.mjs", import.meta.url));
+  const stdout = execFileSync(process.execPath, [runnerPath, "--once"], {
+    encoding: "utf8",
+    timeout: 30000,
+    env: {
+      ...process.env,
+      KILN_RUNSC_STATE: stateDir,
+      KILN_RUNSC_BIN: runscPath,
+      FAKE_RUNSC_ARGV_LOG: runscArgv,
+      FAKE_RUNSC_STATE: path.join(dir, "running.txt"),
+    },
+  });
+  assert.match(stdout, /queued-runner-1: running/);
+  const result = JSON.parse(fs.readFileSync(path.join(stateDir, "queue", "results", "queued-runner-1.json"), "utf8"));
+  assert.equal(result.state, "running");
+  assert.equal(result.pid, 4242);
+  assert.ok(result.startedAt, "result carries startedAt");
+  const argv = fs.readFileSync(runscArgv, "utf8");
+  assert.match(argv, /--network=none/, "runner launches with the sandbox-safe network mode");
+  assert.match(argv, /run --detach --bundle/, "runner launches the prepared bundle detached");
+  assert.ok(fs.existsSync(path.join(stateDir, "logs", "queued-runner-1.log")), "container log file created");
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("requireDockerfile: typed NO_DOCKERFILE and confined relative paths", () => {

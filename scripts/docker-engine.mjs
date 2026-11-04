@@ -167,6 +167,13 @@ function parseJsonLines(text, what) {
 // mode publish no ports and enforce no resource limits
 // (--network=none --ignore-cgroups: no cgroup controllers are
 // delegated to this sandbox); the labels say what actually ran.
+//
+// One level deeper still: the launch itself can fail when the
+// CALLER's context is restricted (the backend's systemd service
+// context hits the gofer's namespace denial even for a sound bundle,
+// while an operator shell launches the same bundle fine). That class
+// is handed to the operator-context runner queue below, and the run
+// reports state "queued" until a runner actually starts it.
 
 const RUN_FALLBACK_RE = /namespace|keyring|SetNetworkArgs|sandbox exited|loopback|operation not permitted/i;
 
@@ -211,6 +218,115 @@ function isRunscContainer(id) {
 
 function isNoSuchContainer(err) {
   return err instanceof Error && /no such container/i.test(err.message);
+}
+
+// --- operator-context runner queue -------------------------------------------
+// A direct runsc launch can still fail when the CALLER runs in a
+// restricted context (on this host: the backend's systemd service
+// context, where the gofer's namespace setup is denied even though the
+// identical bundle launches fine from an operator shell). For that
+// failure class the engine does not give up and does not fake a start:
+// it writes a pending request into <state>/queue/pending and waits
+// briefly for an operator-context runner (scripts/runsc-runner.mjs) to
+// execute it and report back in <state>/queue/results. With no runner
+// answering, the run reports state "queued" — the honest state — and
+// the container listing keeps showing it as queued until the runner
+// executes it or it is stopped/removed (which clears the records).
+
+const RUN_QUEUE_RE = /namespace|SetNetworkArgs|sandbox exited|loopback|operation not permitted/i;
+
+const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+
+function runnerWaitMs() {
+  const n = Number(process.env.RUNSC_RUNNER_WAIT_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 4000;
+}
+
+function runscQueuePendingPath(name) {
+  return path.join(runscStateDir(), "queue", "pending", `${name}.json`);
+}
+
+function runscQueueResultPath(name) {
+  return path.join(runscStateDir(), "queue", "results", `${name}.json`);
+}
+
+function readQueueJson(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readQueuePending(name) {
+  return readQueueJson(runscQueuePendingPath(name));
+}
+
+function readQueueResult(name) {
+  return readQueueJson(runscQueueResultPath(name));
+}
+
+function hasQueueRecord(name) {
+  return fs.existsSync(runscQueuePendingPath(name)) || fs.existsSync(runscQueueResultPath(name));
+}
+
+// The result that belongs to the CURRENT pending request: a result
+// written for an earlier generation of the same name (its startedAt
+// predates the pending's requestedAt) is stale and does not count.
+function currentQueueResult(name, pending) {
+  const result = readQueueResult(name);
+  if (!result) return null;
+  if (pending && result.startedAt && pending.requestedAt && String(result.startedAt) < String(pending.requestedAt)) return null;
+  return result;
+}
+
+function writeQueuePending(name, { image, requestedAt } = {}) {
+  const file = runscQueuePendingPath(name);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const record = {
+    name,
+    image: image !== undefined && image !== null ? String(image) : (readRunscMeta(name)?.image || null),
+    bundleDir: runscBundleDir(name),
+    logFile: runscLogPath(name),
+    requestedAt: requestedAt || new Date().toISOString(),
+  };
+  const tmp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(record, null, 2));
+  fs.renameSync(tmp, file);
+  return record;
+}
+
+function clearQueueRecords(name) {
+  fs.rmSync(runscQueuePendingPath(name), { force: true });
+  fs.rmSync(runscQueueResultPath(name), { force: true });
+}
+
+// Queue the prepared bundle for the operator-context runner and wait
+// a short window for the runner to report. Returns { queued:false }
+// once the runner reports the container started (running, or already
+// exited — the start did happen), { queued:true } when no runner
+// answered in the window; throws RUN_FAILED when the runner reports
+// the launch itself failed.
+async function queueForRunner(name, image) {
+  const requestedAt = new Date().toISOString();
+  writeQueuePending(name, { image, requestedAt });
+  const deadline = Date.now() + runnerWaitMs();
+  for (;;) {
+    const result = readQueueResult(name);
+    if (
+      result && typeof result.state === "string"
+      && (!result.startedAt || String(result.startedAt) >= requestedAt)
+    ) {
+      if (result.state === "failed") {
+        throw new DockerError("RUN_FAILED", `runsc runner failed to start container ${name}${result.error ? `: ${trimErr(result.error)}` : ""}`);
+      }
+      return { queued: false };
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return { queued: true };
+    await sleep(Math.min(250, remaining));
+  }
 }
 
 function runscCliError(err, stderr) {
@@ -313,7 +429,15 @@ async function readImageConfig(image) {
 
 // Start (or restart) the sandbox for an already-assembled bundle.
 // Container stdout/stderr append to the runsc log file for the name.
-async function launchRunsc(name) {
+// Resolves { queued:false } when the sandbox started here. When the
+// launch fails with the host-context class (the caller's context —
+// e.g. the backend's systemd service — cannot perform the gofer's
+// namespace setup even though the bundle is sound), the bundle is
+// handed to the operator-context runner queue instead: resolves
+// { queued:true } if no runner answered in the wait window, or
+// { queued:false } once a runner reports the start. Any other failure
+// throws RUN_FAILED with the captured log tail.
+async function launchRunsc(name, image) {
   const bundleDir = runscBundleDir(name);
   const logPath = runscLogPath(name);
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
@@ -338,8 +462,13 @@ async function launchRunsc(name) {
     try {
       tail = trimErr(fs.readFileSync(logPath, "utf8").slice(-2000));
     } catch { /* no log captured */ }
-    throw new DockerError("RUN_FAILED", `runsc failed to start container ${name}${tail ? `: ${tail}` : ""}`);
+    const failure = new DockerError("RUN_FAILED", `runsc failed to start container ${name}${tail ? `: ${tail}` : ""}`);
+    if (RUN_QUEUE_RE.test(failure.message)) {
+      return queueForRunner(name, image);
+    }
+    throw failure;
   }
+  return { queued: false };
 }
 
 async function runViaRunsc({ image, name, env, cmd, entrypoint } = {}) {
@@ -409,7 +538,18 @@ async function runViaRunsc({ image, name, env, cmd, entrypoint } = {}) {
     runtime: "runsc-direct",
     createdAt: new Date().toISOString(),
   }, null, 2));
-  await launchRunsc(cname);
+  const launched = await launchRunsc(cname, image);
+  if (launched && launched.queued) {
+    return {
+      id: cname,
+      name: cname,
+      image,
+      state: "queued",
+      runtime: "runsc-direct",
+      ports: [],
+      note: "queued for an operator-context runner (scripts/runsc-runner.mjs); the service context cannot start sandboxes on this host",
+    };
+  }
   return { id: cname, name: cname, image, state: "running", runtime: "runsc-direct", ports: [] };
 }
 
@@ -438,6 +578,42 @@ async function listRunscContainers() {
       labels: "",
       runtime: "runsc-direct",
       createdAt: e.created ? String(e.created) : "",
+    });
+  }
+  return out;
+}
+
+// Containers known only through the runner queue: a pending request
+// the runner has not executed yet reads "queued"; a current result
+// reports its own state (running / exited / failed) until
+// removeContainer clears the records.
+function listQueueContainers() {
+  const names = new Set();
+  for (const dir of [path.join(runscStateDir(), "queue", "pending"), path.join(runscStateDir(), "queue", "results")]) {
+    let files = [];
+    try {
+      files = fs.readdirSync(dir);
+    } catch { /* queue not created yet */ }
+    for (const f of files) {
+      if (f.endsWith(".json")) names.add(f.slice(0, -".json".length));
+    }
+  }
+  const out = [];
+  for (const name of names) {
+    const pending = readQueuePending(name);
+    const result = currentQueueResult(name, pending);
+    const meta = readRunscMeta(name);
+    const state = result && typeof result.state === "string" ? result.state : "queued";
+    out.push({
+      id: name,
+      name,
+      image: meta && meta.image ? String(meta.image) : (pending && pending.image ? String(pending.image) : "(runsc)"),
+      state,
+      status: state,
+      ports: [],
+      labels: "",
+      runtime: "runsc-direct",
+      createdAt: meta && meta.createdAt ? String(meta.createdAt) : (pending && pending.requestedAt ? String(pending.requestedAt) : ""),
     });
   }
   return out;
@@ -520,15 +696,34 @@ export async function listContainers(all = true) {
     createdAt: r.CreatedAt || "",
   }));
   // runsc-direct containers live outside the daemon; merge them after
-  // the docker entries, labeled. A docker container wins a name clash.
+  // the docker entries, labeled. Name-clash priority: docker >
+  // runsc-live > runner queue.
+  const seen = new Set(dockerEntries.map((c) => c.name));
+  const merged = [...dockerEntries];
   try {
-    const runscEntries = await listRunscContainers();
-    if (runscEntries.length) {
-      const dockerNames = new Set(dockerEntries.map((c) => c.name));
-      return [...dockerEntries, ...runscEntries.filter((c) => !dockerNames.has(c.name))];
+    for (const c of await listRunscContainers()) {
+      if (!seen.has(c.name)) {
+        seen.add(c.name);
+        merged.push(c);
+      }
     }
   } catch { /* runsc listing is best-effort; docker state is the floor */ }
-  return dockerEntries;
+  try {
+    for (const c of listQueueContainers()) {
+      if (!seen.has(c.name)) {
+        seen.add(c.name);
+        merged.push(c);
+      }
+    }
+  } catch { /* queue listing is best-effort too */ }
+  return merged;
+}
+
+function readRunscLogTail(id, t) {
+  const lines = fs.readFileSync(runscLogPath(id), "utf8").split("\n");
+  let logs = lines.slice(-t).join("\n");
+  if (logs.length > 65536) logs = logs.slice(logs.length - 65536);
+  return logs;
 }
 
 export async function containerLogs(id, tail = 200) {
@@ -544,9 +739,25 @@ export async function containerLogs(id, tail = 200) {
     // captured to the runsc log file at launch. Serve that, labeled.
     const logPath = runscLogPath(id);
     if (fs.existsSync(logPath) && (isRunscContainer(id) || isNoSuchContainer(e))) {
-      const lines = fs.readFileSync(logPath, "utf8").split("\n");
-      let logs = lines.slice(-t).join("\n");
-      if (logs.length > 65536) logs = logs.slice(logs.length - 65536);
+      return { id, tail: t, logs: readRunscLogTail(id, t), runtime: "runsc-direct" };
+    }
+    // A queued container may have no log file yet (nothing has run).
+    // Answer with its queue state, honestly, instead of docker's
+    // "no such container".
+    const pending = readQueuePending(id);
+    const result = currentQueueResult(id, pending);
+    if (pending || result) {
+      if (fs.existsSync(logPath)) {
+        return { id, tail: t, logs: readRunscLogTail(id, t), runtime: "runsc-direct" };
+      }
+      let logs;
+      if (result && result.state === "failed") {
+        logs = result.error ? String(result.error) : "the operator-context runner failed to start this container";
+      } else if (result && result.state === "exited") {
+        logs = "(the container exited; no output was captured)";
+      } else {
+        logs = "queued — waiting for an operator-context runner";
+      }
       return { id, tail: t, logs, runtime: "runsc-direct" };
     }
     throw e;
@@ -963,7 +1174,8 @@ export async function startContainer(id) {
     return { id, state: "started" };
   } catch (e) {
     if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
-    await launchRunsc(validateContainerName(id));
+    const launched = await launchRunsc(validateContainerName(id), readRunscMeta(id)?.image);
+    if (launched && launched.queued) return { id, state: "queued", runtime: "runsc-direct" };
     return { id, state: "started", runtime: "runsc-direct" };
   }
 }
@@ -974,10 +1186,26 @@ export async function stopContainer(id) {
     await execDocker(["stop", id], { timeoutMs: 60000 });
     return { id, state: "stopped" };
   } catch (e) {
-    if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
-    await execRunsc([...runscStateArgs(), "kill", id, "SIGTERM"], { timeoutMs: 30000 }).catch(() => {});
-    await deleteRunscState(id);
-    return { id, state: "stopped", runtime: "runsc-direct" };
+    if (!isNoSuchContainer(e)) throw e;
+    if (isRunscContainer(id)) {
+      const live = (await listRunscContainers()).some((c) => c.id === id);
+      if (!live && hasQueueRecord(id)) {
+        // Queued but never executed — or the runner's "running"
+        // record is stale (runsc no longer lists it). Stopping is a
+        // dequeue: clear the queue records.
+        clearQueueRecords(id);
+        return { id, state: "dequeued", runtime: "runsc-direct" };
+      }
+      await execRunsc([...runscStateArgs(), "kill", id, "SIGTERM"], { timeoutMs: 30000 }).catch(() => {});
+      await deleteRunscState(id);
+      clearQueueRecords(id);
+      return { id, state: "stopped", runtime: "runsc-direct" };
+    }
+    if (hasQueueRecord(id)) {
+      clearQueueRecords(id);
+      return { id, state: "dequeued", runtime: "runsc-direct" };
+    }
+    throw e;
   }
 }
 
@@ -990,7 +1218,9 @@ export async function restartContainer(id) {
     if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
     await execRunsc([...runscStateArgs(), "kill", id, "SIGTERM"], { timeoutMs: 30000 }).catch(() => {});
     await deleteRunscState(id);
-    await launchRunsc(validateContainerName(id));
+    clearQueueRecords(id);
+    const launched = await launchRunsc(validateContainerName(id), readRunscMeta(id)?.image);
+    if (launched && launched.queued) return { id, state: "queued", runtime: "runsc-direct" };
     return { id, state: "restarted", runtime: "runsc-direct" };
   }
 }
@@ -1004,11 +1234,21 @@ export async function removeContainer(id, { force = false } = {}) {
     await execDocker(args, { timeoutMs: 30000 });
     return { id, removed: true };
   } catch (e) {
-    if (!isRunscContainer(id) || !isNoSuchContainer(e)) throw e;
-    await deleteRunscState(id, { force: true });
-    fs.rmSync(runscBundleDir(id), { recursive: true, force: true });
-    fs.rmSync(runscLogPath(id), { force: true });
-    return { id, removed: true, runtime: "runsc-direct" };
+    if (!isNoSuchContainer(e)) throw e;
+    if (isRunscContainer(id)) {
+      await deleteRunscState(id, { force: true });
+      clearQueueRecords(id);
+      fs.rmSync(runscBundleDir(id), { recursive: true, force: true });
+      fs.rmSync(runscLogPath(id), { force: true });
+      return { id, removed: true, runtime: "runsc-direct" };
+    }
+    if (hasQueueRecord(id)) {
+      clearQueueRecords(id);
+      fs.rmSync(runscBundleDir(id), { recursive: true, force: true });
+      fs.rmSync(runscLogPath(id), { force: true });
+      return { id, removed: true, runtime: "runsc-direct" };
+    }
+    throw e;
   }
 }
 
