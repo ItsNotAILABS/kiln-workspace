@@ -114,6 +114,7 @@
           <div><dt>OS / arch</dt><dd id="stat-os">—</dd></div>
           <div><dt>Images</dt><dd id="stat-images">—</dd></div>
           <div><dt>Containers</dt><dd id="stat-containers">—</dd></div>
+          <div class="hidden" id="stat-execution-wrap"><dt>Execution</dt><dd id="stat-execution">—</dd></div>
         </dl>
       </section>
 
@@ -243,6 +244,7 @@
           engineState: $("engine-state"), engineDown: $("engine-down"), engineDownReason: $("engine-down-reason"),
           statServer: $("stat-server"), statClient: $("stat-client"), statDriver: $("stat-driver"),
           statOs: $("stat-os"), statImages: $("stat-images"), statContainers: $("stat-containers"),
+          statExecution: $("stat-execution"), statExecutionWrap: $("stat-execution-wrap"),
           imagesBody: $("images-body"), imagesEmpty: $("images-empty"),
           containersBody: $("containers-body"), containersEmpty: $("containers-empty"),
           logsWrap: $("logs-wrap"), logsTitle: $("logs-title"), logsPre: $("logs-pre"),
@@ -279,6 +281,12 @@
             var counts = data.counts || {};
             els.statImages.textContent = counts.images === null || counts.images === undefined ? (eng.images != null ? String(eng.images) : "—") : String(counts.images);
             els.statContainers.textContent = counts.containers === null || counts.containers === undefined ? (eng.containers != null ? String(eng.containers) : "—") : String(counts.containers);
+            if (eng.execution && eng.execution.runscDirect && els.statExecution && els.statExecutionWrap) {
+              els.statExecution.textContent = "runsc-direct available (gVisor) — runs are labeled by the runtime that executed them.";
+              els.statExecutionWrap.classList.remove("hidden");
+            } else if (els.statExecutionWrap) {
+              els.statExecutionWrap.classList.add("hidden");
+            }
           }).catch(function (err) {
             els.engineState.textContent = err.status === 401 ? "unauthorized" : "unreachable";
             els.engineState.className = "badge bad";
@@ -324,7 +332,10 @@
             els.containersBody.textContent = "";
             containers.forEach(function (c) {
               var tr = document.createElement("tr");
-              tr.appendChild(el("td", c.name || "", "mono"));
+              var nameTd = el("td", null, "mono");
+              nameTd.appendChild(document.createTextNode(c.name || ""));
+              if (c.runtime) nameTd.appendChild(el("div", c.runtime, "muted small"));
+              tr.appendChild(nameTd);
               tr.appendChild(el("td", c.image || "", "mono"));
               var stateTd = document.createElement("td");
               var badge = el("span", c.state || "", "badge" + (c.state === "running" ? " ok" : ""));

@@ -39,14 +39,14 @@ trimmed — no stack traces.
 
 | Method | Route | Body / query | Answers |
 | --- | --- | --- | --- |
-| GET | `/api/kiln/docker/status` | — | engine probe (versions, storage driver, OS/arch) + image/container counts |
+| GET | `/api/kiln/docker/status` | — | engine probe (versions, storage driver, OS/arch, `execution`) + image/container counts |
 | GET | `/api/kiln/docker/images` | — | images: id, repository, tag, size, createdAt |
 | GET | `/api/kiln/docker/containers` | — | containers (all): id, name, image, state, status, ports, labels |
 | GET | `/api/kiln/docker/containers/:id` | — | inspect: state, ports, labels, env key names (never values) |
 | GET | `/api/kiln/docker/containers/:id/logs` | `?tail=` (1–5000, default 200) | combined stdout+stderr, capped at 64 KiB |
 | POST | `/api/kiln/docker/build` | `{owner, repo, ref?, tag?, dockerfile?}` | `202 {jobId}`; the build runs async in-process |
 | GET | `/api/kiln/docker/jobs/:id` | — | job state (`queued`/`building`/`done`/`failed`), error, last 100 log lines |
-| POST | `/api/kiln/docker/run` | `{image, name?, ports?, env?, memoryMb?, cpus?, network?, cmd?}` | `200 {container:{id, image}}` |
+| POST | `/api/kiln/docker/run` | `{image, name?, ports?, env?, memoryMb?, cpus?, network?, cmd?}` | `200 {container:{id, image, runtime}}` — `runtime` names the mechanism that actually ran it (see below) |
 | POST | `/api/kiln/docker/containers/:id/start` | — | `{id, state:"started"}` |
 | POST | `/api/kiln/docker/containers/:id/stop` | — | `{id, state:"stopped"}` |
 | POST | `/api/kiln/docker/containers/:id/restart` | — | `{id, state:"restarted"}` |
@@ -72,6 +72,48 @@ missing repo/Dockerfile/container is a 404.
 Nothing widens these defaults: there is no privileged mode, no volume
 mount surface, and no way to pass arbitrary `docker` flags — the request
 body is a closed shape, not a command line.
+
+## Execution modes on this host
+
+This host's sandbox blocks container start through the daemon's normal
+path: the containerd shim must setns into the libnetwork-owned network
+namespace in the OCI spec (denied), and runc/crun die on a
+session-keyring call inside the container's fresh namespaces. The
+daemon itself, images and `docker create`/`export` all work. So the
+engine carries a second, honestly labeled execution path — **nothing
+is ever relabeled**:
+
+- **`runtime: "docker"`** — the daemon started the container, the
+  normal case on an unrestricted host.
+- **`runtime: "runsc-direct"`** — `docker run` failed with the
+  namespace/keyring failure class, so the engine assembled an OCI
+  bundle from the image (`docker create` + `docker export` for the
+  rootfs, the image's own entrypoint/cmd/env/workdir in the spec) and
+  ran it with gVisor's `runsc` directly. The result, the container
+  listing, its logs and its lifecycle answers all carry the
+  `runsc-direct` label, and the status probe advertises the path as
+  `execution.runscDirect`. In this mode containers publish **no
+  ports** (requested mappings are reported back as `ports: []`, not
+  silently claimed) and resource limits are **not enforced** — runsc
+  runs with `--network=none --ignore-cgroups` because no cgroup
+  controllers are delegated to this sandbox.
+
+Builds have the same shape. `docker build` runs first
+(`buildMethod: "docker"`). Where buildkit is blocked the same way, a
+**COPY-only Dockerfile** (no `RUN` steps) is assembled for real:
+export the `FROM` image's rootfs, apply the COPY/ADD steps, and
+`docker import` the result with the Dockerfile's `ENV`/`CMD`/
+`ENTRYPOINT`/`WORKDIR` as image config — labeled
+`buildMethod: "import-assembly"`. A Dockerfile with `RUN` steps fails
+with that limit stated in the error; multi-stage, `FROM scratch` and
+flagged COPY forms are likewise refused by the assembler rather than
+approximated.
+
+One more host gap, stated plainly: **daemon-side registry pulls time
+out on this host** (the daemon's manifest requests die while shell
+curl reaches the same registries fine). There is no KILN pull surface
+in any case — images arrive here by building them, by the assembly
+path above, or by the operator importing an image outside KILN.
 
 ## Build from a forge repo
 
