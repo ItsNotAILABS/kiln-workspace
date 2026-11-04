@@ -112,10 +112,33 @@ async function listRunsc(bin) {
   }
 }
 
+// The shared runsc root keeps a "null-netns" file that the first
+// sandbox bind-mounts (nsfs). After that sandbox exits, the stale
+// mount survives and every later launch in the same root dies in the
+// gofer with "error setting namespace of type network ... operation
+// not permitted" — a fresh root always works, a reused one does not.
+// Before launching, when nothing is running in the root, unmount and
+// remove the stale file so runsc recreates it. Best-effort: any
+// failure here falls through to the launch, which reports its own
+// error if the root really is unusable.
+async function clearStaleNullNetns(bin) {
+  try {
+    const live = await listRunsc(bin);
+    if (live.some((c) => String(c.status || "").toLowerCase() === "running")) return;
+    const nn = path.join(rootDir(), "null-netns");
+    if (!fs.existsSync(nn)) return;
+    await new Promise((done) => {
+      execFile("umount", [nn], { timeout: 5000, windowsHide: true }, () => done());
+    });
+    fs.rmSync(nn, { force: true });
+  } catch { /* best-effort */ }
+}
+
 // Launch exactly the way the engine's launchRunsc does: same global
 // flags, same detached run on the prepared bundle, stdout/stderr
 // appended to the container's log file.
-function launchBundle(bin, name, bundleDir, logFile) {
+async function launchBundle(bin, name, bundleDir, logFile) {
+  await clearStaleNullNetns(bin);
   return new Promise((resolvePromise) => {
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
     const fd = fs.openSync(logFile, "a");
