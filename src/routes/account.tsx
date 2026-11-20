@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { formatKln } from "@/lib/utils";
 import { useKiln } from "@/lib/kiln/store";
+import { KilnIdentity } from "@/components/KilnIdentity";
 
 export const Route = createFileRoute("/account")({ component: Account });
 
@@ -37,6 +38,7 @@ function Account() {
           </button>
         </form>
       )}
+      <KilnIdentity />
     </div>
   );
 }

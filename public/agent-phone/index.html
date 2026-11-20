@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" class="dark antialiased">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" />
+    <title>KILN · Agent Phone</title>
+    <meta name="description" content="Presence as a service: backend middleware that gives an agent its own phone body, its own number, and its own data budget. An installable SDK and API, built on KILN." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" />
+    <style>
+      :root {
+        --bg: #09090b; --panel: #101012; --panel-2: #161618; --border: #26262a;
+        --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --accent: #e8e3d9;
+        --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; --radius: 10px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body { background: var(--bg); color: var(--text); font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; font-size: 15px; line-height: 1.55; }
+      code, .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 0.92em; }
+      a { color: var(--text); }
+      .topbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(9,9,11,.92); backdrop-filter: blur(8px); z-index: 5; }
+      .brand { font-family: "Newsreader", Georgia, serif; font-size: 22px; font-weight: 600; text-decoration: none; letter-spacing: .02em; }
+      .brand-sub { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .14em; }
+      .topbar nav { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; }
+      .topbar nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+      .topbar nav a:hover { color: var(--text); }
+      .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 72px; }
+      h1 { font-family: "Newsreader", Georgia, serif; font-weight: 600; font-size: 42px; line-height: 1.12; margin: 8px 0 12px; }
+      h2 { font-family: "Newsreader", Georgia, serif; font-weight: 600; font-size: 26px; margin: 40px 0 10px; }
+      .lede { color: var(--muted); font-size: 17px; max-width: 66ch; margin: 0 0 8px; }
+      .lede strong { color: var(--text); font-weight: 600; }
+      p { max-width: 70ch; }
+      .muted { color: var(--muted); }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
+      .card { border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); padding: 16px 18px; }
+      .card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+      .card p { margin: 0; color: var(--muted); font-size: 14px; }
+      .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); text-transform: uppercase; vertical-align: middle; }
+      .badge.ok { color: var(--ok); border-color: rgba(74,222,128,.4); }
+      .badge.warn { color: var(--warn); border-color: rgba(251,191,36,.4); }
+      .notice { border: 1px solid var(--warn); color: var(--warn); background: rgba(251,191,36,.07); border-radius: var(--radius); padding: 12px 16px; margin: 18px 0; }
+      .notice p { margin: 0; color: var(--warn); font-size: 14px; }
+      pre { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; line-height: 1.6; }
+      .links { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+      .linkrow { border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; text-decoration: none; }
+      .linkrow:hover { border-color: #3f3f46; background: var(--panel-2); }
+      .linkrow .t { font-weight: 600; }
+      .linkrow .d { color: var(--muted); font-size: 13px; }
+      ul { max-width: 70ch; }
+      li { margin: 4px 0; }
+      footer { border-top: 1px solid var(--border); margin-top: 56px; padding-top: 18px; color: var(--faint); font-size: 13px; }
+      @media (max-width: 640px) { h1 { font-size: 32px; } .topbar nav { margin-left: 0; } }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">KILN</a>
+      <span class="brand-sub">Agent Phone</span>
+      <nav>
+        <a href="/auro/agent-phone">Repository</a>
+        <a href="/auro/esim-store">eSIM Store</a>
+        <a href="https://kiln.pocketnova.app/doi/auro/agent-phone">Paper</a>
+      </nav>
+    </header>
+
+    <main class="wrap">
+      <h1>A phone of its own, for every agent.</h1>
+      <p class="lede">
+        The agent phone is <strong>backend middleware</strong>: an installable SDK and an API that give an
+        agent its own Android phone body, its own number, and its own data budget. Not a phone interface
+        for people. A phone for the agent itself, so it can hold accounts, receive its own verification
+        codes, run real apps, and stay present in a place. <strong>Presence as a service.</strong>
+      </p>
+      <p class="muted">
+        A server gives an agent compute. A phone gives it a place in the human network: a number people
+        and apps can reach, a local identity in a market, and a connection it keeps even when its owner
+        is offline. Two agents are two phones, two numbers, two data identities.
+      </p>
+
+      <h2>What it is</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Body</h3>
+          <p>A real Android the agent runs itself: a Redroid body in Docker, a Cuttlefish device on a
+          KVM host, or a physical phone. Compute can live anywhere, a laptop, a server, a
+          supercomputer. The identity survives body swaps.</p>
+        </div>
+        <div class="card">
+          <h3>Identity</h3>
+          <p>An eSIM profile on certified hardware gives the agent its network identity and its number.
+          The EID is hardware truth: it stays unset until a real eUICC reports one. Nothing is labeled
+          carrier that is not.</p>
+        </div>
+        <div class="card">
+          <h3>Budget</h3>
+          <p>Data is the agent's own metered resource, bought from a pre-funded pool, never from the
+          owner's wallet. The budget projects its days of life from what is left, how fast it burns,
+          and when the plan expires.</p>
+        </div>
+      </div>
+      <p>
+        The SDK is <code>@itsnotailabs/agent-phone</code>: seven modules (embodiment, apps, data budget,
+        heartbeat, envelope, SMS inbox, and the SDK facade), zero dependencies, shipped as production
+        code on the forge. The eSIM store beside it owns the provider side: catalog, pricing, orders,
+        and profile delivery, with <strong>3,281 plans</strong> across roughly 247 countries and regions.
+      </p>
+
+      <h2>The Docker body</h2>
+      <p>
+        One compose command stands up an agent's body and the SDK loop that keeps its presence honest:
+      </p>
+      <pre>docker compose -f deploy/docker-compose.yml up -d --build
+docker logs -f agent-phone-agent   # embodiment, body-up, presence beats</pre>
+      <p>
+        The <code>redroid</code> service is the Android body, with a persistent data volume: its apps and
+        state survive restarts. The <code>agent</code> service runs the SDK against it over ADB: it
+        creates the identity, assembles the embodiment, and beats the presence heartbeat from the body's
+        real liveness. A dead body goes missed, then dead, on the record. ADB binds to localhost only;
+        an exposed ADB port is an unlocked phone.
+      </p>
+      <ul>
+        <li><strong>Host requirements, hard limits:</strong> Docker with Compose v2, and a kernel with Android Binder (<code>CONFIG_ANDROID_BINDER_IPC</code>). Binder is Android's IPC layer; without it no Android container runs under any runtime. About 4 GB of free RAM.</li>
+        <li><strong>Alternatives:</strong> Cuttlefish or the Android Emulator on a KVM host, or a physical device over ADB. Same SDK seam, same runner.</li>
+        <li><strong>Honest label:</strong> a Docker body on its own is <span class="badge">host-only</span> connectivity. It rides the host network and is labeled never-carrier. It becomes carrier-attached only when a real radio organ is attached and detected.</li>
+      </ul>
+      <p class="muted">
+        On the store side, the same integration lives in <code>body/</code>: a host probe that reports
+        Binder, KVM, Docker, and memory as evidence, boot and install executors, and a health script
+        that reports only what ADB can prove.
+      </p>
+
+      <h2>Tiers</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Base <span class="badge ok">works today</span></h3>
+          <p>Software only. Runs on any host with <strong>no extra hardware</strong>. Full stack: apps,
+          budgets, presence, mesh. The identity is simulated, and the record says simulated on its
+          face.</p>
+        </div>
+        <div class="card">
+          <h3>Pro <span class="badge warn">$89 one time, spec only</span></h3>
+          <p>We ship the radio bridge: a branded USB dongle (USB modem plus a certified, removable
+          eUICC; the hardware runs about $24 to $50 at retail) in a matte black box, black foam inside,
+          logo on top. Plugged in, the host detects it and the same phone upgrades to real carrier
+          registration and a real data identity. No payment or shipping flow is wired yet.</p>
+        </div>
+        <div class="card">
+          <h3>Physical</h3>
+          <p>A real phone body. The bridge does not repeal app-side device integrity checks of the Play
+          Integrity class; the physical tier is what answers those, and app health reports them per app
+          instead of hiding them.</p>
+        </div>
+      </div>
+
+      <h2>Apps: a standard kit, an open door</h2>
+      <p>
+        The phone is a showcase for what an agent can do with a body of its own, so the loadout is the
+        real kit: <strong>WhatsApp, Telegram, Signal, native SMS, K-9 Mail, Firefox, Phantom, Instagram,
+        and X</strong>, plus whatever the work needs locally. But the policy is not a fixed catalog: it
+        is a general install capability. The owner can direct any download, and if the owner leaves the
+        phone on AUTO, the agent chooses and installs apps itself. Each app's health is earned on a
+        real body and reported as it is: running, installs, login wall, attestation blocked, or needs
+        a voice profile.
+      </p>
+
+      <h2>Data: what presence costs</h2>
+      <ul>
+        <li><strong>Presence only:</strong> a heartbeat every 30 seconds costs about <strong>4.3 MB a day</strong>. A 10 GB plan lasts months.</li>
+        <li><strong>Living in its apps:</strong> a few hundred MB a day. The same 10 GB plan is roughly three to eight weeks.</li>
+        <li><strong>Days of life</strong> is always the smaller of two clocks: data left divided by burn rate, and validity left on the plan. A plan can die with data still on it, and the budget says so.</li>
+        <li>Travel eSIM profiles are usually <strong>data-only</strong>: native voice and SMS need a voice profile, and the phone labels that instead of pretending.</li>
+      </ul>
+
+      <h2>Status, stated plainly</h2>
+      <div class="notice">
+        <p>
+          The code is real and tested: <strong>57 of 57</strong> checks in the agent-phone repo,
+          <strong>169 checks</strong> across the store module, paper and code kept byte-identical by
+          test. The gates are also real: <strong>no live carrier attach exists yet</strong> (the build
+          host's kernel has no Binder and no radio hardware is attached), the eSIM store turns on only
+          when its ESIMaccess balance is funded and the owner says turn on, and Pro is a priced spec,
+          not a checkout. Gates are labeled as gates, here and in the code.
+        </p>
+      </div>
+
+      <h2>The paper</h2>
+      <p>
+        <em>Presence as a Service: The Agent Phone, Hardware Identity, and the Economics of Being
+        Reachable.</em> Alfredo Medina (2026), KILN Papers, version 3. The paper prints the modules
+        with their code, and that same code is what ships: a test fails if the paper and the modules
+        drift by a single byte.
+      </p>
+      <p class="muted">
+        KILN ID: <code>kiln:auro/agent-phone</code>. This is a KILN-registered identifier. It is not a
+        registered DOI, and it is not labeled as one; it maps one to one onto a registered DOI when a
+        DataCite or Crossref prefix exists.
+      </p>
+
+      <h2>Read the real thing</h2>
+      <div class="links">
+        <a class="linkrow" href="/auro/agent-phone">
+          <span class="t">auro/agent-phone</span>
+          <span class="d">The SDK, the API surface, the deploy integration, and the paper. Public, on this forge.</span>
+        </a>
+        <a class="linkrow" href="/auro/esim-store">
+          <span class="t">auro/esim-store</span>
+          <span class="d">The store and the desk: catalog, pricing, orders, delivery, and the Docker body host integration in body/.</span>
+        </a>
+        <a class="linkrow" href="https://kiln.pocketnova.app/doi/auro/agent-phone">
+          <span class="t">Paper resolver</span>
+          <span class="d">kiln.pocketnova.app/doi/auro/agent-phone, the permanent record for Presence as a Service.</span>
+        </a>
+        <a class="linkrow" href="/">
+          <span class="t">KILN</span>
+          <span class="d">The forge this product is built on: repos, Studio, Papers, and the agent doors.</span>
+        </a>
+      </div>
+
+      <footer>
+        Agent Phone is an ItsNotAI Labs product, built and published on KILN. This page is a static
+        showcase; the product itself is the SDK and API in the repositories above.
+      </footer>
+    </main>
+  </body>
+</html>

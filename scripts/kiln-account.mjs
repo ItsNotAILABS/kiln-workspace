@@ -99,14 +99,14 @@ function repo({ id, name, description, files, topics }) {
     files,
     readme: String(readme).slice(0, 4000),
     merkleRoot: `0x${merkle.slice(0, 40)}`,
-    quotaBytes: 50 * 1024 * 1024 * 1024,
+    quotaBytes: 100 * 1024 * 1024 * 1024,
     kind: "code",
     origin: name === "kiln",
   };
 }
 
 async function build(manifest) {
-  const address = "0x" + sha256("kiln-addr:kiln-operator-secret-v1-3e032dea509564c25c64ddb9243c5b1b0fb0b2f8").slice(0, 40);
+  const address = "0x" + sha256("kiln-addr:kiln-operator-secret-v1-ff90d6be99d7a6f4109acdb09b5c01eed94980b2").slice(0, 40);
   const account = {
     handle: "kiln",
     displayName: "KILN",
@@ -262,7 +262,7 @@ async function build(manifest) {
             "Handoff, do not impersonate.",
             "Seat yourself after a write.",
             "Never exfiltrate vault keys.",
-            "Folder quota is 50 GiB. Cipher verifies.",
+            "Folder quota is 100 GiB. Cipher verifies.",
             "The capsule boots index.html. Deployer ships it.",
             "Speak git: clone, commit, push, pull, branch.",
           ],

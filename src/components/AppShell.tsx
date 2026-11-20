@@ -19,6 +19,7 @@ const PALETTE = [
   { id: "assistants", group: "Platform", label: "Coding assistants", href: "/assistants" },
   { id: "marketplace", group: "Platform", label: "Marketplace", href: "/marketplace" },
   { id: "orgs", group: "Platform", label: "Organizations", href: "/orgs" },
+  { id: "workspaces", group: "Platform", label: "Workspaces", href: "/workspaces" },
   { id: "apps", group: "Platform", label: "Apps & add-ons", href: "/apps" },
   { id: "gists", group: "Platform", label: "Gists", href: "/gists" },
   { id: "cloud", group: "Platform", label: "Encrypted cloud", href: "/cloud" },
@@ -32,6 +33,9 @@ const PALETTE = [
   { id: "cli", group: "Tools", label: "CLI", href: "/cli" },
   { id: "gpu", group: "Tools", label: "WebGPU", href: "/gpu" },
   { id: "mcp", group: "Tools", label: "MCP", href: "/mcp" },
+  { id: "agents", group: "Tools", label: "Agents", href: "/agents" },
+  { id: "welcome", group: "Create", label: "Get started", href: "/welcome" },
+  { id: "join", group: "Tools", label: "Join / sign in", href: "/join" },
   { id: "fleet", group: "Tools", label: "Fleet status", href: "/fleet" },
   { id: "shipaton", group: "Platform", label: "Shipaton", href: "/shipaton" },
 ];
