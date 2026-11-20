@@ -33,7 +33,17 @@ export class SwarmDownError extends Error {
 }
 
 export function swarmStateDir(): string {
-  return process.env.KILN_SWARM_DIR || join(homedir(), ".kiln-swarm");
+  if (process.env.KILN_SWARM_DIR) return process.env.KILN_SWARM_DIR;
+  const home = join(homedir(), ".kiln-swarm");
+  if (existsSync(join(home, "api.token"))) return home;
+  // The forge app service runs as root (HOME=/root) while the swarm state
+  // lives under the architect's home — fall back to it so the local door
+  // finds the token whichever user the service runs as. (A systemd
+  // drop-in carried this before; /etc does not survive VM replacement,
+  // so the resolution lives here, in code.)
+  const architect = "/home/hatch/.kiln-swarm";
+  if (existsSync(join(architect, "api.token"))) return architect;
+  return home;
 }
 
 interface DaemonJson {
@@ -53,6 +63,11 @@ function readDaemonJson(): DaemonJson | null {
 }
 
 function readApiToken(): string | null {
+  // Hosted deployments (e.g. the Cloudflare door) carry the token as a
+  // server-side secret env var — there is no state dir on the host.
+  // Locally the state-dir file wins and behavior is unchanged.
+  const fromEnv = process.env.KILN_SWARM_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
   const p = join(swarmStateDir(), "api.token");
   if (!existsSync(p)) return null;
   try {
@@ -81,6 +96,29 @@ function pidAlive(pid: number): boolean {
 export async function getDaemonStatus(): Promise<SwarmDaemonStatus> {
   const dj = readDaemonJson();
   if (!dj || !dj.pid || !pidAlive(dj.pid)) {
+    // Hosted door (no local state dir): the daemon is remote, reached
+    // through its tunnel URL. Probe its health endpoint and report
+    // that truthfully instead of prescribing a local start command
+    // this host cannot run.
+    const remoteUrl = process.env.KILN_SWARM_API_URL;
+    if (!dj && remoteUrl) {
+      try {
+        const r = await fetch(`${remoteUrl}/health`, { signal: AbortSignal.timeout(3000) });
+        const data = (await r.json().catch(() => null)) as { ok?: boolean } | null;
+        if (r.ok && data?.ok) {
+          return { up: true, pid: null, startedAt: null, apiUrl: remoteUrl, fix: null };
+        }
+      } catch {
+        /* unreachable — fall through to the down verdict */
+      }
+      return {
+        up: false,
+        pid: null,
+        startedAt: null,
+        apiUrl: remoteUrl,
+        fix: "the local forge daemon is unreachable through its tunnel — check the daemon on its host machine",
+      };
+    }
     return { up: false, pid: null, startedAt: null, apiUrl: null, fix: SWARM_DOWN_FIX };
   }
   try {
@@ -111,17 +149,34 @@ async function daemonFetch(path: string, init: { method?: string; body?: unknown
   const token = readApiToken();
   if (!token) {
     throw new SwarmDownError(
-      "swarm api.token is missing — run `node swarm.mjs init` in the KILN swarm directory, then start the daemon"
+      "swarm api token is missing — locally: run `node swarm.mjs init` in the KILN swarm directory, then start the daemon; hosted: set the KILN_SWARM_TOKEN secret"
     );
   }
+  return daemonFetchAs(path, token, { ...init, operator: true });
+}
+
+/**
+ * Daemon call with an explicit bearer (or none). The account system
+ * needs all three shapes: NO bearer for the public bootstrap routes
+ * (signup/login — sending the operator token there would silently
+ * grant the privileged namespace-claim path), the account SESSION
+ * bearer for account-scoped routes, and the operator token (the
+ * daemonFetch default). Errors surface the daemon's own message
+ * verbatim, including its 401s — for account calls a 401 means a bad
+ * or expired session, not a re-inited daemon.
+ */
+async function daemonFetchAs(
+  path: string,
+  bearer: string | null,
+  init: { method?: string; body?: unknown; operator?: boolean } = {}
+): Promise<unknown> {
   let res: Response;
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (bearer) headers.authorization = "Bearer " + bearer;
   try {
     res = await fetch(daemonApiUrl() + path, {
       method: init.method || "GET",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
+      headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
       signal: AbortSignal.timeout(15000),
     });
@@ -129,7 +184,7 @@ async function daemonFetch(path: string, init: { method?: string; body?: unknown
     throw new SwarmDownError("cannot reach the swarm daemon API — it may be down");
   }
   const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (res.status === 401) {
+  if (res.status === 401 && init.operator) {
     throw new Error("swarm API rejected the token (401) — the daemon may have been re-inited");
   }
   if (!res.ok) throw new Error(data.error || `swarm API HTTP ${res.status}`);
@@ -281,4 +336,406 @@ export async function listGitRepos(): Promise<GitRepoView[]> {
     createdAt: r.createdAt,
     cloneUrl: `${apiUrl}/git/${r.owner}/${r.repo}`,
   }));
+}
+
+/** Mirrors the daemon's workspace record (see swarm/lib/workspaces.mjs). */
+export interface WorkspaceView {
+  id: string;
+  owner: string;
+  slug: string;
+  name: string;
+  description: string;
+  repos: string[];
+  siteIds: string[];
+  /** Id of the parent workspace (same owner), or null for a root. */
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A workspace record plus its nested children (GET /v1/workspaces?tree=1). */
+export interface WorkspaceTreeNode extends WorkspaceView {
+  children: WorkspaceTreeNode[];
+}
+
+/** Lightweight workspace reference used by status parent/children + details. */
+export interface WorkspaceRef {
+  id: string;
+  owner: string;
+  slug: string;
+  name: string;
+}
+
+export interface RepoCommitView {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+/** Context-economical per-repo summary carried on workspace status entries. */
+export interface RepoDetailsSummary {
+  description: string;
+  topics: string[];
+  defaultBranch: string | null;
+  commitCount: number;
+  lastCommit: RepoCommitView | null;
+}
+
+export interface WorkspaceRepoStatus {
+  repo: string;
+  exists: boolean;
+  branch: string | null;
+  head: { sha: string; shortSha: string; subject: string } | null;
+  /** Present on daemons with the project-details rollout. */
+  details?: RepoDetailsSummary | null;
+}
+
+export interface WorkspaceSiteStatus {
+  id: string;
+  name: string | null;
+  frontend: string | null;
+  backend: string | null;
+  found: boolean;
+}
+
+/** Mirrors the daemon's aggregated workspace status (GET /v1/workspaces/:id). */
+export interface WorkspaceStatusView {
+  workspace: WorkspaceView;
+  repos: WorkspaceRepoStatus[];
+  sites: WorkspaceSiteStatus[];
+  memory: {
+    repos: Record<string, { present: boolean; coreLabels: string[] }>;
+    linked: boolean;
+  };
+  /** Nesting fields — absent on daemons predating the nesting rollout. */
+  parent?: WorkspaceRef | null;
+  children?: WorkspaceRef[];
+  rollup?: {
+    descendantCount: number;
+    repos: WorkspaceRepoStatus[];
+    siteIds: string[];
+  };
+}
+
+/** Mirrors a daemon sites-registry record (GET /v1/sites). */
+export interface SiteView {
+  id: string;
+  name: string;
+  frontend: string | null;
+  backend: string | null;
+}
+
+export interface RepoLanguageView {
+  language: string;
+  files: number;
+  bytes: number;
+  pct: number;
+}
+
+export interface RepoReadmeView {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
+/** Latest CI result as recorded by the daemon (lib/ci.mjs readLatest). */
+export interface CiResultView {
+  status?: string;
+  verdict?: string;
+  conclusion?: string;
+  state?: string;
+  result?: string;
+  sha?: string;
+  commit?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  finishedAt?: string;
+  date?: string;
+}
+
+export interface RepoWorkspaceMembership extends WorkspaceRef {
+  parentId: string | null;
+}
+
+/**
+ * The project-details object (GET /v1/repos/:owner/:repo/details) —
+ * derived live from the hosted bare repo; see swarm/lib/repodetails.mjs.
+ * `ci` is the latest CI result object as recorded, or null when no run
+ * has been recorded for the repo.
+ */
+export interface RepoDetailsView {
+  repo: string;
+  owner: string;
+  name: string;
+  createdAt: string | null;
+  description: string;
+  topics: string[];
+  empty: boolean;
+  defaultBranch: string | null;
+  commitCount: number;
+  fileCount: number;
+  treeBytes: number;
+  diskBytes: number;
+  lastCommit: RepoCommitView | null;
+  recentActivity: RepoCommitView[];
+  languages: RepoLanguageView[];
+  readme: RepoReadmeView | null;
+  workspaces: RepoWorkspaceMembership[];
+  site: { id: string; name: string; role: string } | null;
+  ci: CiResultView | null;
+}
+
+/**
+ * KILN Workspaces from the daemon registry (GET /v1/workspaces).
+ * Daemons that predate the workspaces rollout answer 404 — daemonFetch
+ * surfaces that as an error and the pages render the rollout state
+ * honestly instead of mock data.
+ */
+export async function listWorkspaces(owner?: string): Promise<WorkspaceView[]> {
+  const q = owner ? `?owner=${encodeURIComponent(owner)}` : "";
+  const data = (await daemonFetch(`/v1/workspaces${q}`)) as { workspaces: WorkspaceView[] };
+  return data.workspaces ?? [];
+}
+
+export interface CapabilityAbilityView {
+  id: string;
+  title: string;
+  endpoints: string[];
+  mcpTools: string[];
+}
+
+export interface CapabilitiesView {
+  version: number;
+  abilities: CapabilityAbilityView[];
+  openapi?: string;
+  docs?: string;
+}
+
+/** The daemon's self-description (GET /v1/capabilities) — the discovery
+ * surface every agent starts from. Live on every call, never cached. */
+export async function getCapabilities(): Promise<CapabilitiesView> {
+  return (await daemonFetch(`/v1/capabilities`)) as CapabilitiesView;
+}
+
+// ---------------------------------------------------------------------------
+// Accounts + agent identities (daemon lib/accounts.mjs; docs/ACCOUNTS.md).
+// The web doors for the forge's own account system. Signup/login are
+// public bootstrap calls — they go out with NO bearer on purpose:
+// presenting the operator token would silently take the privileged
+// namespace-claim path. Everything else here carries the caller's
+// session token, forwarded from the browser by the server functions;
+// the daemon enforces owner scoping against it.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the daemon's accountPublic (never carries any hash). */
+export interface AccountView {
+  id: string;
+  email: string;
+  name: string;
+  owner: string;
+  createdAt: string;
+}
+
+/** Mirrors the daemon's agentPublic (never carries the token or its hash). */
+export interface AgentIdentityView {
+  id: string;
+  accountId: string;
+  name: string;
+  scopes: string[];
+  createdAt: string;
+  revoked: boolean;
+}
+
+/** Are the account routes live on the daemon yet? They ride the
+ *  daemon's Doctor-owned boots, so the honest UI state comes from the
+ *  capability list, not from trying and failing. */
+export async function accountsLive(): Promise<boolean> {
+  const caps = await getCapabilities();
+  return caps.abilities.some((a) => a.id === "accounts");
+}
+
+export async function signupAccount(input: {
+  email: string; name: string; owner: string; password: string;
+}): Promise<AccountView> {
+  const r = (await daemonFetchAs(`/v1/accounts`, null, { method: "POST", body: input })) as {
+    account: AccountView;
+  };
+  return r.account;
+}
+
+export async function loginAccount(input: { email: string; password: string }): Promise<{
+  account: AccountView; sessionToken: string; expiresAt: string;
+}> {
+  return (await daemonFetchAs(`/v1/accounts/login`, null, { method: "POST", body: input })) as {
+    account: AccountView; sessionToken: string; expiresAt: string;
+  };
+}
+
+export async function getMe(session: string): Promise<{
+  account: AccountView;
+  principal: { kind: string; agent?: AgentIdentityView };
+}> {
+  return (await daemonFetchAs(`/v1/accounts/me`, session)) as {
+    account: AccountView;
+    principal: { kind: string; agent?: AgentIdentityView };
+  };
+}
+
+export async function listMyAgents(session: string): Promise<AgentIdentityView[]> {
+  const r = (await daemonFetchAs(`/v1/accounts/me/agents`, session)) as {
+    agents: AgentIdentityView[];
+  };
+  return r.agents;
+}
+
+export async function createMyAgent(
+  session: string,
+  input: { name: string; scopes?: string[] }
+): Promise<{ agent: AgentIdentityView; token: string }> {
+  return (await daemonFetchAs(`/v1/accounts/me/agents`, session, {
+    method: "POST",
+    body: input,
+  })) as { agent: AgentIdentityView; token: string };
+}
+
+export async function revokeMyAgent(session: string, id: string): Promise<AgentIdentityView> {
+  const r = (await daemonFetchAs(`/v1/accounts/me/agents/${encodeURIComponent(id)}`, session, {
+    method: "DELETE",
+  })) as { agent: AgentIdentityView };
+  return r.agent;
+}
+
+/** Workspaces as the signed-in account sees them: the daemon scopes
+ *  the list to the account's own namespace when the bearer is a
+ *  session (operator calls elsewhere keep the full view). */
+export async function listWorkspacesAs(session: string): Promise<WorkspaceView[]> {
+  const r = (await daemonFetchAs(`/v1/workspaces`, session)) as { workspaces: WorkspaceView[] };
+  return r.workspaces;
+}
+
+export async function createWorkspaceAs(
+  session: string,
+  input: CreateWorkspaceInput
+): Promise<WorkspaceView> {
+  const r = (await daemonFetchAs(`/v1/workspaces`, session, { method: "POST", body: input })) as {
+    workspace: WorkspaceView;
+  };
+  return r.workspace;
+}
+
+/** Workspace roots with nested `children` arrays (GET /v1/workspaces?tree=1). */
+export async function listWorkspaceTree(owner?: string): Promise<WorkspaceTreeNode[]> {
+  const params = new URLSearchParams({ tree: "1" });
+  if (owner) params.set("owner", owner);
+  const data = (await daemonFetch(`/v1/workspaces?${params.toString()}`)) as {
+    workspaces: WorkspaceTreeNode[];
+  };
+  return data.workspaces ?? [];
+}
+
+export async function getWorkspaceStatus(id: string): Promise<WorkspaceStatusView> {
+  return (await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`)) as WorkspaceStatusView;
+}
+
+export interface CreateWorkspaceInput {
+  owner: string;
+  slug: string;
+  name: string;
+  description?: string;
+  repos?: string[];
+  siteIds?: string[];
+  parentId?: string;
+}
+
+export async function createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceView> {
+  const data = (await daemonFetch("/v1/workspaces", { method: "POST", body: input })) as {
+    workspace: WorkspaceView;
+  };
+  return data.workspace;
+}
+
+export interface UpdateWorkspacePatch {
+  name?: string;
+  description?: string;
+  addRepos?: string[];
+  removeRepos?: string[];
+  linkSites?: string[];
+  unlinkSites?: string[];
+  /** Present = change parent (workspace id, or null for root); absent = unchanged. */
+  setParent?: string | null;
+}
+
+export async function updateWorkspace(
+  id: string,
+  patch: UpdateWorkspacePatch
+): Promise<WorkspaceView> {
+  const data = (await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: patch,
+  })) as { workspace: WorkspaceView };
+  return data.workspace;
+}
+
+export async function deleteWorkspace(id: string, confirm: string): Promise<void> {
+  await daemonFetch(`/v1/workspaces/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: { confirm },
+  });
+}
+
+/** Sites from the daemon registry (GET /v1/sites). */
+export async function listSites(): Promise<SiteView[]> {
+  const data = (await daemonFetch("/v1/sites")) as { sites: SiteView[] };
+  return data.sites ?? [];
+}
+
+function unwrapDetails(data: unknown): RepoDetailsView {
+  const d = data as { details?: RepoDetailsView };
+  return (d && typeof d === "object" && d.details ? d.details : data) as RepoDetailsView;
+}
+
+/** Project details for a forge-hosted repo. 404s for repos the forge doesn't host. */
+export async function getRepoDetails(owner: string, repo: string): Promise<RepoDetailsView> {
+  const data = await daemonFetch(
+    `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`
+  );
+  return unwrapDetails(data);
+}
+
+export interface UpdateRepoDetailsPatch {
+  description?: string;
+  topics?: string[];
+}
+
+export async function updateRepoDetails(
+  owner: string,
+  repo: string,
+  patch: UpdateRepoDetailsPatch
+): Promise<RepoDetailsView> {
+  const data = await daemonFetch(
+    `/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/details`,
+    { method: "PATCH", body: patch }
+  );
+  return unwrapDetails(data);
+}
+
+export interface CreatedGitRepoView {
+  owner: string;
+  repo: string;
+  createdAt: string | null;
+}
+
+/** Create a hosted repo on the forge (POST /git/:owner/:repo, bearer). */
+export async function createGitRepo(owner: string, repo: string): Promise<CreatedGitRepoView> {
+  const data = (await daemonFetch(
+    `/git/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    { method: "POST" }
+  )) as { owner?: string; repo?: string; createdAt?: string } | null;
+  return {
+    owner: typeof data?.owner === "string" ? data.owner : owner,
+    repo: typeof data?.repo === "string" ? data.repo : repo,
+    createdAt: typeof data?.createdAt === "string" ? data.createdAt : null,
+  };
 }

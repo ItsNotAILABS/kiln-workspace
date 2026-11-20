@@ -1,0 +1,34 @@
+{
+  "name": "kiln",
+  "version": 1,
+  "mcpServers": {
+    "kiln": {
+      "url": "https://kiln.pocketnova.app/api/mcp"
+    }
+  },
+  "servers": [
+    {
+      "name": "kiln",
+      "url": "https://kiln.pocketnova.app/api/mcp",
+      "transport": "http",
+      "protocolVersion": "2024-11-05",
+      "description": "KILN forge MCP, remote: JSON-RPC 2.0 POST, sessionless, plain-JSON responses. initialize, ping and tools/list need no credential. For tools/call writes and non-public reads, send Authorization: Bearer <KILN credential> (operator token, account session kiln_sess_…, or agent token kiln_agt_… with the forge scope).",
+      "toolsDiscovery": "POST {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"} to the endpoint, or GET the endpoint for the tool names and transport"
+    },
+    {
+      "name": "kiln-forge",
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "<path-to>/KILN/swarm/mcp-server.mjs"
+      ],
+      "protocolVersion": "2024-11-05",
+      "serverInfo": {
+        "name": "kiln-forge",
+        "version": "1.0.0"
+      },
+      "description": "KILN forge MCP, local: spawn against the forge daemon's /v1 API for the full tool surface (kiln_workspace_*, kiln_repo_details, kiln_forge_*, kiln_papers_*, kiln_agent_*). Connection config: KILN_SWARM_DIR (daemon state dir), or KILN_SWARM_API_URL + KILN_SWARM_TOKEN."
+    }
+  ],
+  "agentJson": "https://kiln.pocketnova.app/.well-known/agent.json"
+}
