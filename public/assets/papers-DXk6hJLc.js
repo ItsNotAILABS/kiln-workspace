@@ -245,7 +245,7 @@ GitHub Copilot completes tokens in an editor buffer. It does not:
 - settle a Merkle commit
 - lock a bounty
 - boot a capsule
-- report a 50 GiB folder quota
+- report a 100 GiB folder quota
 
 Those are forge verbs. Occupancy means the agent is inside the object, not next to it.
 
@@ -316,7 +316,7 @@ A copilot is licensed to the host. A rebel occupies memory you sealed. The name 
 If the agent cannot sit on the file, it is not in the forge. Rebel occupancy is the difference between a chatbot and a lab.
 
 — ${s}, ${c}
-`},{slug:`deposit`,id:`KILN-WP-05`,title:`Folder-as-Deposit`,running:`50 GiB per folder, unlimited files, Zenodo-class memory that does not freeze.`,date:`${c}-09`,doi:`10.5281/zenodo.kiln-deposit-2026`,keywords:[`Zenodo`,`quota`,`OPFS`,`chunking`,`scientific deposit`],abstract:`Zenodo publishes a 50 GB / 100-file record that freezes after 45 days. GitHub warns at 100 MB and likes repositories under 2 GB. KILN claims a stronger unit: each folder is a 50 GiB deposit (${l.toLocaleString()} bytes), file count unbounded, nested folders independently capped, mutation continuous via Merkle commits. This paper compares the numbers, specifies chunked streaming memory, and states the honest physical ceiling of a browser origin.`,related:[`pxm`,`seal`,`protocol`],body:`# Folder-as-Deposit
+`},{slug:`deposit`,id:`KILN-WP-05`,title:`Folder-as-Deposit`,running:`100 GiB per folder, unlimited files, Zenodo-class memory that does not freeze.`,date:`${c}-09`,doi:`10.5281/zenodo.kiln-deposit-2026`,keywords:[`Zenodo`,`quota`,`OPFS`,`chunking`,`scientific deposit`],abstract:`Zenodo publishes a 50 GB / 100-file record that freezes after 45 days. GitHub warns at 100 MB and likes repositories under 2 GB. KILN claims a stronger unit: each folder is a 100 GiB deposit (${l.toLocaleString()} bytes), file count unbounded, nested folders independently capped, mutation continuous via Merkle commits. This paper compares the numbers, specifies chunked streaming memory, and states the honest physical ceiling of a browser origin.`,related:[`pxm`,`seal`,`protocol`],body:`# Folder-as-Deposit
 
 **${s} / KILN · ${c} · Working paper KILN-WP-05**
 
@@ -324,7 +324,7 @@ If the agent cannot sit on the file, it is not in the forge. Rebel occupancy is 
 
 The unit of scientific memory at Zenodo is the record: 50 decimal GB, 100 files, then a freeze. The unit of git is the repository, with social pressure to stay small. Neither is how a lab actually works. A lab has folders that are worlds — datasets, weights, captures, trees — and they keep changing.
 
-KILN's unit is the **folder-as-deposit**: 50 GiB binary per folder, unlimited files, unlimited nested deposits, continuous sealed writes.
+KILN's unit is the **folder-as-deposit**: 100 GiB binary per folder, unlimited files, unlimited nested deposits, continuous sealed writes.
 
 ## 1. The numbers (normative)
 
@@ -345,19 +345,19 @@ GitHub:
 KILN:
 
 \`\`\`
-quota(F) = 50 GiB = ${l.toLocaleString()} bytes
+quota(F) = 100 GiB = ${l.toLocaleString()} bytes
 chunk    = 4 MiB = ${u.toLocaleString()} bytes
 files(F) unbounded
 nested folders each carry their own quota(F)
 \`\`\`
 
-50 GiB is 7.37% larger than Zenodo's 50 decimal GB, and it applies **per folder**, not per record. A repo with four folders is a 200 GiB logical deposit.
+100 GiB is 114.75% larger than Zenodo's 50 decimal GB, and it applies **per folder**, not per record. A repo with four folders is a 400 GiB logical deposit.
 
 ## 2. Why folders, not records
 
 A Zenodo record is a publication. A git repo is a project. A folder is the thing a human actually points at: \`data/\`, \`weights/\`, \`captures/\`. Making the folder the quota boundary matches how labs pack disks and how agents set \`workingPath\`.
 
-Nested independence means you do not pay for \`src/\` out of the same 50 GiB as \`datasets/\`. Zenodo's fair-use rule against splitting is the opposite axiom.
+Nested independence means you do not pay for \`src/\` out of the same 100 GiB as \`datasets/\`. Zenodo's fair-use rule against splitting is the opposite axiom.
 
 ## 3. Streaming memory
 
@@ -371,15 +371,15 @@ Uploads never hold the whole file in a JS string.
 
 Reassembly walks metas in index order, decrypts, concatenates. Editors load text only under \`MAX_EDIT\`. Binaries download as assembled blobs.
 
-Persistent storage is requested (\`navigator.storage.persist\`). The product contract is 50 GiB per folder. The **physical** ceiling is the origin quota the browser grants — displayed beside the bar, never lied about.
+Persistent storage is requested (\`navigator.storage.persist\`). The product contract is 100 GiB per folder. The **physical** ceiling is the origin quota the browser grants — displayed beside the bar, never lied about.
 
 ## 4. Comparison
 
 | | Zenodo | GitHub | KILN |
 |---|---|---|---|
 | Unit | Record | Repository | Folder |
-| Cap | 50 GB decimal / 100 files | ~2 GB repo | 50 GiB / unlimited files |
-| Nested | Discouraged split | Shares the repo cap | Independent 50 GiB |
+| Cap | 50 GB decimal / 100 files | ~2 GB repo | 100 GiB / unlimited files |
+| Nested | Discouraged split | Shares the repo cap | Independent 100 GiB |
 | Mutation | 45-day freeze | Git history | Continuous Merkle commits |
 | Memory | Files on CERN disk | Git objects + LFS | OPFS / IndexedDB, client-sealed |
 

@@ -3,7 +3,7 @@ function component(){
   const {repo}=useRepo();
   if(!repo) return j.jsx("p",{className:"py-16 text-center text-muted",children:"No public tree with that name."});
   const files=repo.files||[];
-  const rows=files.map(f=>({sha:(f.sha||"k0000000").slice(0,7), message:f.message||("update "+f.path), path:f.path, at:f.updatedAt||repo.updatedAt}));
+  const rows=(Array.isArray(repo.commits)&&repo.commits.length?repo.commits.map(c=>({sha:String(c.sha||"").slice(0,7), message:c.subject||c.message||"commit", path:"", at:c.date||repo.updatedAt})):files.map(f=>({sha:(f.sha||"k0000000").slice(0,7), message:f.message||("update "+f.path), path:f.path, at:f.updatedAt||repo.updatedAt})));
   const uniq=[];
   const seen=new Set();
   for(const r of rows){ const k=r.sha+r.message; if(seen.has(k)) continue; seen.add(k); uniq.push(r); }

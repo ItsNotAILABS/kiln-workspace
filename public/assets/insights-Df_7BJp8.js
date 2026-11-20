@@ -14,7 +14,7 @@ function component(){
           ["Watchers", repo.watchers||1],
           ["Forks", repo.forks||0],
           ["TVL", (repo.tvlKln||0)+" KLN"],
-          ["Quota", "50 GB"]
+          ["Quota", "100 GB"]
         ].map(([k,v])=>j.jsxs("article",{className:"rounded-xl border border-border bg-surface p-4",children:[
           j.jsx("p",{className:"text-[11px] uppercase tracking-[0.16em] text-muted",children:k}),
           j.jsx("p",{className:"mt-1 font-display text-2xl",children:String(v)})
