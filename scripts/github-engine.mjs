@@ -21,47 +21,8 @@
  * those buttons already call.
  */
 import zlib from "node:zlib";
-
-/**
- * Decoded JSON from the GitHub / ungh APIs. Shapes vary per endpoint, so this
- * stays a record at the boundary; readers below access it defensively.
- * @typedef {Record<string, any>} ApiRecord
- */
-
-/** A parsed GitHub lookup query — the `kind` discriminant narrows owner/repo.
- * @typedef {{ kind: "empty", query: string }
- *   | { kind: "repo", query: string, owner: string, repo: string }
- *   | { kind: "user", query: string, owner: string }
- *   | { kind: "search", query: string }} ParsedQuery
- */
-
-/** A text file selected for import.
- * @typedef {Object} TextFile
- * @property {string} path
- * @property {string} content
- * @property {number} size
- * @property {string} language
- * @property {string} sha
- * @property {boolean} encrypted
- */
-
-/** A fetched tree, from the zipball or the git-tree fallback.
- * @typedef {Object} PackedTree
- * @property {TextFile[]} files
- * @property {number} skipped
- * @property {string} via
- * @property {string} branch
- * @property {string} [sha]
- */
-
-/** @typedef {Object} LookupResult
- * @property {boolean} ok
- * @property {string} [error]
- * @property {ApiRecord[]} items
- * @property {string} [via]
- * @property {string} [query]
- * @property {string} [kind]
- */
+import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const UA = "KILN-import-engine/1.0 (+https://kiln.app)";
 const UNGH = "https://ungh.cc";
@@ -85,7 +46,6 @@ const LOOKUP_TTL_MS = 5 * 60 * 1000;
 
 const lookupCache = new Map();
 
-/** @param {string} p @returns {boolean} True when the path is never imported. */
 function skipPath(p) {
   const parts = String(p).split("/").filter(Boolean);
   for (const part of parts) {
@@ -95,7 +55,6 @@ function skipPath(p) {
   return SKIP_EXT.test(p);
 }
 
-/** @param {number} status @param {unknown} body */
 function json(status, body) {
   return {
     status,
@@ -108,10 +67,6 @@ function json(status, body) {
   };
 }
 
-/**
- * @param {string} url
- * @param {{ binary?: boolean, timeout?: number, maxBytes?: number }} [opts]
- */
 async function get(url, { binary = false, timeout = 18000, maxBytes = 0 } = {}) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeout);
@@ -146,10 +101,6 @@ async function get(url, { binary = false, timeout = 18000, maxBytes = 0 } = {}) 
   }
 }
 
-/**
- * @param {unknown} raw
- * @returns {ParsedQuery}
- */
 function parseQuery(raw) {
   let q = String(raw || "").trim();
   if (!q) return { kind: "empty", query: "" };
@@ -175,7 +126,6 @@ function parseQuery(raw) {
   return { kind: "user", owner: q, query: q };
 }
 
-/** @param {ApiRecord} r @returns {ApiRecord} */
 function mapGhRepo(r) {
   const full = r.full_name || r.repo || (r.owner && r.name ? `${typeof r.owner === "string" ? r.owner : r.owner.login}/${r.name}` : r.name);
   const [owner, name] = String(full || "").split("/");
@@ -196,7 +146,6 @@ function mapGhRepo(r) {
   };
 }
 
-/** @param {ApiRecord} r @returns {ApiRecord} */
 function mapUnghRepo(r) {
   const full = r.repo || `${r.owner || ""}/${r.name}`;
   const [owner, name] = String(full).split("/");
@@ -217,7 +166,6 @@ function mapUnghRepo(r) {
   };
 }
 
-/** @param {ApiRecord[]} items @returns {ApiRecord[]} */
 function dedupe(items) {
   const seen = new Set();
   const out = [];
@@ -230,14 +178,12 @@ function dedupe(items) {
   return out;
 }
 
-/** @param {string} owner @returns {Promise<ApiRecord[]>} */
 async function listUnghUser(owner) {
   const res = await get(`${UNGH}/users/${encodeURIComponent(owner)}/repos`);
   if (!res.ok || !res.data?.repos) return [];
   return res.data.repos.map(mapUnghRepo);
 }
 
-/** @param {string} owner @param {string} repo @returns {Promise<ApiRecord | null>} */
 async function getUnghRepo(owner, repo) {
   const res = await get(`${UNGH}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
   if (!res.ok || !res.data?.repo) return null;
@@ -253,7 +199,6 @@ async function getUnghRepo(owner, repo) {
   });
 }
 
-/** @param {string} owner @returns {Promise<ApiRecord[]>} */
 async function listGhUser(owner) {
   let res = await get(`${GH}/users/${encodeURIComponent(owner)}/repos?per_page=100&sort=updated`);
   if (!res.ok) res = await get(`${GH}/orgs/${encodeURIComponent(owner)}/repos?per_page=100&sort=updated`);
@@ -261,14 +206,12 @@ async function listGhUser(owner) {
   return res.data.map(mapGhRepo);
 }
 
-/** @param {string} owner @param {string} repo @returns {Promise<ApiRecord | null>} */
 async function getGhRepo(owner, repo) {
   const res = await get(`${GH}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
   if (!res.ok || !res.data?.full_name) return null;
   return mapGhRepo(res.data);
 }
 
-/** @param {string} html @param {string} owner @returns {ApiRecord[]} */
 function parseHtmlRepos(html, owner) {
   const names = [];
   const re = new RegExp(`href="/(${owner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[A-Za-z0-9._-]+)"`, "gi");
@@ -298,7 +241,6 @@ function parseHtmlRepos(html, owner) {
   );
 }
 
-/** @param {string} owner @returns {Promise<ApiRecord[]>} */
 async function listHtmlUser(owner) {
   const pages = [
     `https://github.com/${encodeURIComponent(owner)}?tab=repositories`,
@@ -315,7 +257,6 @@ async function listHtmlUser(owner) {
   return [];
 }
 
-/** @param {string} query @returns {Promise<ApiRecord[]>} */
 async function searchGh(query) {
   const items = [];
   const users = await get(`${GH}/search/users?q=${encodeURIComponent(query)}&per_page=5`);
@@ -335,7 +276,6 @@ async function searchGh(query) {
   return items;
 }
 
-/** @param {string} query @returns {Promise<LookupResult>} */
 async function lookup(query) {
   const parsed = parseQuery(query);
   if (parsed.kind === "empty") {
@@ -373,7 +313,6 @@ async function lookup(query) {
     return result;
   }
 
-  /** @type {LookupResult} */
   const result = {
     ok: true,
     items: dedupe(items),
@@ -389,7 +328,6 @@ async function lookup(query) {
   return result;
 }
 
-/** @param {Buffer} buf @returns {{ path: string, data: Buffer }[]} */
 function unzip(buf) {
   const files = [];
   let eocd = -1;
@@ -434,17 +372,12 @@ function unzip(buf) {
   return files;
 }
 
-/** @param {string} path @returns {string} */
 function stripZipRoot(path) {
   const parts = path.split("/").filter(Boolean);
   if (parts.length <= 1) return path;
   return parts.slice(1).join("/");
 }
 
-/**
- * @param {{ path: string, data: Buffer }[]} entries
- * @returns {{ files: TextFile[], skipped: number }}
- */
 function selectTextFiles(entries) {
   const files = [];
   let skipped = 0;
@@ -485,12 +418,6 @@ function selectTextFiles(entries) {
   return { files, skipped };
 }
 
-/**
- * @param {string} owner
- * @param {string} repo
- * @param {string} branch
- * @returns {Promise<PackedTree | null>}
- */
 async function importZip(owner, repo, branch) {
   const refs = [
     `refs/heads/${branch}`,
@@ -520,14 +447,7 @@ async function importZip(owner, repo, branch) {
   return null;
 }
 
-/**
- * @param {string} owner
- * @param {string} repo
- * @param {string} branch
- * @returns {Promise<PackedTree | null>}
- */
 async function importTree(owner, repo, branch) {
-  /** @type {ApiRecord[]} */
   let filesMeta = [];
   let sha = branch;
   const ungh = await get(`${UNGH}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/files/${encodeURIComponent(branch)}`);
@@ -537,11 +457,7 @@ async function importTree(owner, repo, branch) {
   } else {
     const tree = await get(`${GH}/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
     if (tree.ok && Array.isArray(tree.data?.tree)) {
-      /** @type {ApiRecord[]} */
-      const treeEntries = tree.data.tree;
-      filesMeta = treeEntries
-        .filter((e) => e.type === "blob")
-        .map((e) => ({ path: e.path, sha: e.sha, size: e.size }));
+      filesMeta = tree.data.tree.filter((e) => e.type === "blob").map((e) => ({ path: e.path, sha: e.sha, size: e.size }));
       sha = tree.data.sha || branch;
     }
   }
@@ -581,7 +497,6 @@ async function importTree(owner, repo, branch) {
   return files.length ? { files, skipped, via: "git tree", branch, sha } : null;
 }
 
-/** @param {string} owner @param {string} repo */
 async function importRepo(owner, repo) {
   owner = String(owner || "").trim();
   repo = String(repo || "").replace(/\.git$/i, "").trim();
@@ -635,13 +550,11 @@ async function importRepo(owner, repo) {
   };
 }
 
-/** @param {ApiRecord} [arg] @returns {Promise<LookupResult>} */
 export async function githubListRepos(arg) {
   const query = String(arg?.data?.query || arg?.query || "").trim();
   return lookup(query);
 }
 
-/** @param {ApiRecord} [arg] */
 export async function githubImportTree(arg) {
   const owner = String(arg?.data?.owner || arg?.owner || "").trim();
   const repo = String(arg?.data?.repo || arg?.repo || "").trim();
@@ -650,14 +563,8 @@ export async function githubImportTree(arg) {
 
 const MAX_ACCOUNT = 24;
 
-/**
- * @param {ApiRecord[]} items
- * @param {string} [login]
- * @returns {ApiRecord[]}
- */
 function rankAccountRepos(items, login) {
   const me = String(login || "").toLowerCase();
-  /** @param {ApiRecord} r @returns {number} */
   const score = (r) => {
     let n = 0;
     if (String(r.owner || "").toLowerCase() === me) n += 1_000_000;
@@ -669,14 +576,12 @@ function rankAccountRepos(items, login) {
   return [...items].sort((a, b) => score(b) - score(a));
 }
 
-/** @param {ApiRecord} [arg] */
 export async function githubImportAccount(arg) {
   const q = String(arg?.data?.query || arg?.query || arg?.q || "").trim();
   const limit = Math.min(MAX_ACCOUNT, Math.max(1, Number(arg?.data?.limit || arg?.limit || MAX_ACCOUNT) || MAX_ACCOUNT));
   const listed = await lookup(q);
   const parsed = parseQuery(q);
-  const login =
-    parsed.kind === "repo" || parsed.kind === "user" ? parsed.owner : q.replace(/^@/, "");
+  const login = parsed.owner || q.replace(/^@/, "");
   const ranked = rankAccountRepos(listed.items || [], login);
   const items = ranked.slice(0, limit);
   return {
@@ -691,7 +596,6 @@ export async function githubImportAccount(arg) {
   };
 }
 
-/** @param {string} pathname @param {URLSearchParams} searchParams */
 export async function handleGithubRequest(pathname, searchParams) {
   if (!pathname.startsWith("/api/github")) return null;
   if (pathname === "/api/github" || pathname === "/api/github/") {
@@ -730,4 +634,91 @@ export async function handleGithubRequest(pathname, searchParams) {
     return json(result.ok ? 200 : 400, result);
   }
   return json(404, { ok: false, error: "unknown github engine path" });
+}
+
+function scrubGit(text) {
+  return String(text || "")
+    .replace(/x-access-token:[^@\s]+/gi, "x-access-token:redacted")
+    .replace(/bearer\s+\S+/gi, "bearer redacted")
+    .replace(/ghp_[A-Za-z0-9]+/g, "ghp_redacted")
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "github_pat_redacted")
+    .slice(0, 400);
+}
+
+function githubToken(explicit) {
+  const env = String(explicit || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim();
+  if (env) return env;
+  try {
+    const tok = fs.readFileSync("/tmp/grok/connectors/github.token", "utf8").trim();
+    return tok || "";
+  } catch {
+    return "";
+  }
+}
+
+export async function githubPushBranch({ dir, owner, repo, branch, token } = {}) {
+  const o = String(owner || "").trim();
+  const r = String(repo || "").replace(/\.git$/i, "").trim();
+  const b = String(branch || "").trim();
+  if (!dir || !o || !r || !b) return { ok: false, error: "dir, owner, repo, branch required" };
+  if (b === "main" || b === "master") return { ok: false, error: "refusing to push main" };
+  const tok = githubToken(token);
+  if (!tok) return { ok: false, error: "no GitHub token on this kiln" };
+  const remote = `https://github.com/${o}/${r}.git`;
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  let connector = false;
+  try {
+    connector = fs.statSync("/tmp/grok/connectors/github.token").size > 8;
+  } catch {
+    connector = false;
+  }
+  if (!connector) {
+    env.GIT_CONFIG_COUNT = "1";
+    env.GIT_CONFIG_KEY_0 = "http.extraheader";
+    env.GIT_CONFIG_VALUE_0 = `AUTHORIZATION: bearer ${tok}`;
+  }
+  const push = spawnSync("git", ["push", remote, `HEAD:refs/heads/${b}`], {
+    cwd: dir,
+    encoding: "utf8",
+    timeout: 45000,
+    env,
+  });
+  if (push.status !== 0) {
+    return { ok: false, error: scrubGit(push.stderr || push.stdout || "push failed"), remote: `github.com/${o}/${r}`, branch: b };
+  }
+  return { ok: true, branch: b, remote: `github.com/${o}/${r}`, via: "github" };
+}
+
+export async function githubOpenPull({ owner, repo, head, base, title, body, token } = {}) {
+  const tok = githubToken(token);
+  const o = String(owner || "").trim();
+  const r = String(repo || "").replace(/\.git$/i, "").trim();
+  const h = String(head || "").trim();
+  const b = String(base || "main").trim() || "main";
+  const compareUrl = o && r && h ? `https://github.com/${o}/${r}/compare/${b}...${h}?expand=1` : "";
+  if (!tok) return { ok: false, error: "no GitHub token on this kiln", compareUrl };
+  if (!o || !r || !h) return { ok: false, error: "owner, repo, head required", compareUrl };
+  try {
+    const res = await fetch(`${GH}/repos/${encodeURIComponent(o)}/${encodeURIComponent(r)}/pulls`, {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${tok}`,
+        "User-Agent": UA,
+      },
+      body: JSON.stringify({
+        title: String(title || h).slice(0, 180),
+        body: String(body || "").slice(0, 8000),
+        head: h,
+        base: b,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: data.message || `GitHub ${res.status}`, status: res.status, compareUrl };
+    }
+    return { ok: true, number: data.number, url: data.html_url, api: data.url, compareUrl };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "GitHub pull failed", compareUrl };
+  }
 }
