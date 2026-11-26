@@ -1,4 +1,4 @@
-var e=2026,t=`ItsNotAI LABS`,n=`KILN`,r={recordBytes:5e10,fileCap:100,bumpBytes:2e11,freezeDays:45},i={fileWarnBytes:104857600,repoSoftBytes:2147483648,lfsFileBytes:2147483648},a=[{id:`PXM`,title:`Pixelated eXecution Memory`,statement:`A folder is a Hilbert-painted lattice of 4 MiB Merkle cells. Each cell is an AES-256-GCM ciphertext leaf. Locality in the file is locality on the lattice. This is the memory the rebels sit in.`},{id:`DEPOSIT`,title:`Folder-as-deposit`,statement:`Each folder is a Zenodo-class deposit: 50 GiB (53,687,091,200 bytes), not 50 decimal GB. Nested folders each carry an independent cap. File count is unbounded — Zenodo caps a record at 100 files.`},{id:`CAPSULE`,title:`Capsule-in-lattice`,statement:`A capsule is a connected region of the lattice plus an isolated runtime. The same 4D repo that stores the tree boots a sandboxed live preview of the site, the app, the stream.`},{id:`REBEL`,title:`Rebel occupancy`,statement:`Agents are first-class occupants of cells. A working path paints the corresponding Hilbert pixels. Presence is a coordinate, not a chat sidebar.`},{id:`FOURD`,title:`4D repository`,statement:`A repo is (x, y, ρ, t): Hilbert x, Hilbert y, folder depth, chain height. Occupant is a field on the cell. Code, memory, runtime, and swarm share one object.`},{id:`SEAL`,title:`Client-sealed Merkle commits`,statement:`Chunks encrypt in the browser (AES-256-GCM) before OPFS/IndexedDB. The Merkle root settles as a Kiln L1 transaction. The key never leaves the device. Only the commitment is public.`}],o=`# Pixelated eXecution Memory
+var e=2026,t=`ItsNotAI LABS`,n=`KILN`,r={recordBytes:5e10,fileCap:100,bumpBytes:2e11,freezeDays:45},i={fileWarnBytes:104857600,repoSoftBytes:2147483648,lfsFileBytes:2147483648},a=[{id:`PXM`,title:`Pixelated eXecution Memory`,statement:`A folder is a Hilbert-painted lattice of 4 MiB Merkle cells. Each cell is an AES-256-GCM ciphertext leaf. Locality in the file is locality on the lattice. This is the memory the rebels sit in.`},{id:`DEPOSIT`,title:`Folder-as-deposit`,statement:`Each folder is a Zenodo-class deposit: 100 GiB (107,374,182,400 bytes), not 50 decimal GB. Nested folders each carry an independent cap. File count is unbounded — Zenodo caps a record at 100 files.`},{id:`CAPSULE`,title:`Capsule-in-lattice`,statement:`A capsule is a connected region of the lattice plus an isolated runtime. The same 4D repo that stores the tree boots a sandboxed live preview of the site, the app, the stream.`},{id:`REBEL`,title:`Rebel occupancy`,statement:`Agents are first-class occupants of cells. A working path paints the corresponding Hilbert pixels. Presence is a coordinate, not a chat sidebar.`},{id:`FOURD`,title:`4D repository`,statement:`A repo is (x, y, ρ, t): Hilbert x, Hilbert y, folder depth, chain height. Occupant is a field on the cell. Code, memory, runtime, and swarm share one object.`},{id:`SEAL`,title:`Client-sealed Merkle commits`,statement:`Chunks encrypt in the browser (AES-256-GCM) before OPFS/IndexedDB. The Merkle root settles as a Kiln L1 transaction. The key never leaves the device. Only the commitment is public.`}],o=`# Pixelated eXecution Memory
 
 **A Hilbert-mapped Merkle lattice for sealed, agent-occupied, capsule-bootable source deposits.**
 
@@ -38,13 +38,13 @@ IPFS UnixFS typically chunks at 256 KiB. Hilbert-order layouts are known in imag
 Let a folder *F* be a set of files whose paths contain no further slash relative to *F*. The **direct byte mass** of *F* is the sum of file sizes sitting in *F*, not in children.
 
 \`\`\`
-quota(F) = 50 GiB = 53,687,091,200 bytes
+quota(F) = 100 GiB = 107,374,182,400 bytes
 assert  Σ_{f ∈ F} |f|  ≤  quota(F)
 \`\`\`
 
 Nested folders are other deposits. A repository is therefore unbounded in depth; only a single folder is capped. File count is unbounded. Compare Zenodo: one record, 50 decimal GB, 100 files, then freeze.
 
-KILN uses **50 GiB** (binary), which is 7.37% larger than Zenodo's 50 decimal GB, and applies it *per folder*, not per record.
+KILN uses **100 GiB** (binary), which is 114.75% larger than Zenodo's 50 decimal GB, and applies it *per folder*, not per record.
 
 ### 2.2 Sealed leaves
 
@@ -56,7 +56,7 @@ K = SHA-256("kiln-vault:" || walletSecret || repoId)
 
 Ciphertext is written OPFS-first, IndexedDB fallback. A SHA-256 of each sealed chunk is a Merkle leaf. The file root and the tree root settle on Kiln L1 as \`merkle_commit\` / \`blob_put\` transactions. The key commitment \`SHA-256("kiln-key:" || walletSecret)\` is the only public handle on the secret.
 
-Persistent origin storage is requested (\`navigator.storage.persist\`). The 50 GiB folder cap is the product contract; the browser origin quota is the honest physical ceiling and is displayed beside the bar.
+Persistent origin storage is requested (\`navigator.storage.persist\`). The 100 GiB folder cap is the product contract; the browser origin quota is the honest physical ceiling and is displayed beside the bar.
 
 ### 2.3 Pixelated eXecution Memory
 
@@ -100,7 +100,7 @@ Every repository owned on KILN receives a resident agent ("Keeper") at genesis. 
 ## 3. Claims (normative)
 
 1. **PXM.** Named construction: Hilbert-painted 4 MiB AES-GCM Merkle cells as the memory of a source folder.
-2. **Folder-as-deposit.** 50 GiB per folder, unlimited files, unlimited nested deposits. Strictly stronger than Zenodo's 50 GB / 100 files / 45-day freeze.
+2. **Folder-as-deposit.** 100 GiB per folder, unlimited files, unlimited nested deposits. Strictly stronger than Zenodo's 50 GB / 100 files / 45-day freeze.
 3. **Capsule-in-lattice.** Isolated live runtime bound to a lattice region, inside the repo object.
 4. **Rebel occupancy.** Agent presence is a field on the cell.
 5. **4D repo.** *(x, y, ρ, t)* as the native object of the forge.
@@ -113,8 +113,8 @@ We do not claim Hilbert curves, Merkle trees, AES-GCM, or Zenodo's 50 GB number.
 | | Zenodo | GitHub | KILN PXM |
 |---|---|---|---|
 | Unit | Record | Repository | Folder (deposit) |
-| Cap | 50 GB decimal / 100 files | ~2 GB repo, 100 MB file warn | 50 GiB / unlimited files |
-| Nested | Split records (discouraged) | Directories share the repo cap | Each folder is a new 50 GiB deposit |
+| Cap | 50 GB decimal / 100 files | ~2 GB repo, 100 MB file warn | 100 GiB / unlimited files |
+| Nested | Split records (discouraged) | Directories share the repo cap | Each folder is a new 100 GiB deposit |
 | Mutation | 45-day freeze after publish | Git history | Continuous Merkle commits |
 | Encryption | Server ACL, plaintext at rest | Plaintext | AES-256-GCM per chunk, client-side |
 | Proof | MD5/SHA of files | Git tree SHA | SHA-256 Merkle root on L1 |
@@ -128,7 +128,7 @@ The engines are not diagrams. They run in this product:
 
 - \`src/lib/kiln/pxm.ts\` — Hilbert paint, occupancy, capsule regions.
 - \`src/lib/kiln/capsule.ts\` — isolated boot from the working tree.
-- \`src/lib/kiln/fs.ts\` — 4 MiB streaming, OPFS, 50 GiB folder quota.
+- \`src/lib/kiln/fs.ts\` — 4 MiB streaming, OPFS, 100 GiB folder quota.
 - \`src/lib/kiln/merkle.ts\` — binary SHA-256 Merkle.
 - \`src/lib/kiln/crypto.ts\` — AES-256-GCM, vault key, key commitment.
 

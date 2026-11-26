@@ -74,7 +74,7 @@ function component() {
               j.jsx("div", { className: "mt-6 max-w-xl", children: j.jsx(Lattice, { lattice: lat, selected: sel, onSelect: setSel }) }),
               j.jsx("p", {
                 className: "mt-4 font-mono text-[11px] text-muted",
-                children: `PXM coherence ${Math.round((co.coherence || 0) * 100)}% · ${co.cells || 0} cells · ${co.occupied || 0} occupied · ${co.sealed || 0} sealed · folder ${((lat.used || 0) / 1e9).toFixed(4)} GB / 50 GB`,
+                children: `PXM coherence ${Math.round((co.coherence || 0) * 100)}% · ${co.cells || 0} cells · ${co.occupied || 0} occupied · ${co.sealed || 0} sealed · folder ${((lat.used || 0) / 1e9).toFixed(4)} GB / 100 GB`,
               }),
               gpu
                 ? j.jsx("p", {

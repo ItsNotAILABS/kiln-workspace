@@ -4,8 +4,10 @@
  * operator signing/vault secret. Privileged operator sessions must arrive via
  * an authenticated wallet/session boundary.
  */
-import { b as store } from "./store-sx46DNi5.js";
+import { b as store, t as chainBlocks, p as chainTxs } from "./store-sx46DNi5.js";
+import { T as sha256Hex } from "./fs-ri9Mkfbm.js";
 import { constitution, remember, sealMachine } from "./machine-seal.js";
+import { repairRecord } from "./kiln-public.js";
 
 (function installKilnFetch() {
   const w = globalThis;
@@ -54,10 +56,36 @@ import { constitution, remember, sealMachine } from "./machine-seal.js";
   };
 })();
 
+// Agent invite landing: /agents/invite/<token> is three segments and
+// the frozen router answers it Not Found (the route tree has no such
+// route, and kiln-client.js is a locked file). Rewrite it HERE —
+// kiln-forge evaluates before kiln-client in index.html, so the
+// router never sees the dead path: stash the token and land on
+// /agents?invite=<token>, where kiln-agents.js renders the redeem
+// page. The link the sponsor sends never changes; its landing is real.
+try {
+  const m = globalThis.location.pathname.match(/^\/agents\/invite\/([^/]+)$/);
+  if (m) {
+    const token = decodeURIComponent(m[1]);
+    try { globalThis.sessionStorage.setItem("kiln.agent-invite.pending", token); } catch {}
+    globalThis.history.replaceState(null, "", "/agents?invite=" + encodeURIComponent(token));
+  }
+} catch {}
+
 export const KILN_HANDLE = "kiln";
 export const KILN_ADDRESS = "0xbb316d9499a18f9cd5e3691e25e04072308e3700";
 
 let booting = null;
+// Signature of the last capsule this page load merged. bootKilnAccount
+// runs on hydration (twice), on a 400ms timer, and on EVERY return to
+// the tab — and each run used to re-merge the full capsule into the
+// store, which makes the persisted store rewrite its whole blob
+// (userRepos with file contents, ~1.7MB and growing with the forge)
+// and re-render every list, on top of re-downloading the capsule.
+// When the capsule has not changed, the merge and the seating are
+// already done: skip both. The activity mirror still runs — new
+// daemon commits are not part of the capsule signature.
+let lastCapsuleSig = "";
 
 function dedupe(repos) {
   const seen = new Set();
@@ -73,7 +101,12 @@ function dedupe(repos) {
 
 function mergeRepos(doc) {
   const s = store.getState();
-  const incoming = (doc.repos || []).map((r) => ({ ...r, viewerGrant: true, encrypted: !!r.encrypted, owner: "kiln", name: String(r.id).split("/")[1] || r.name }));
+  // Records are shape-normalized as they cross this door (files always
+  // an array, dates parseable, counts numeric): the store's persist
+  // partialize maps files inside setState, so a malformed record merged
+  // here would make every later setState throw — the repair subscription
+  // in kiln-public.js is the second line, never the only one.
+  const incoming = (doc.repos || []).map((r) => ({ ...repairRecord(r), viewerGrant: true, encrypted: !!r.encrypted, owner: "kiln", name: String(r.id).split("/")[1] || r.name }));
   const byId = new Map();
   for (const r of s.userRepos || []) byId.set(r.id, r);
   for (const fresh of incoming) {
@@ -131,18 +164,166 @@ async function seatAgents(doc) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Forge activity mirror: daemon-side commits as L1 transactions.
+//
+// The app's chain is local (seeded + extraTxs/extraBlocks in the store), so
+// work that happens on the forge daemon never appears in it. At boot we pull
+// the recent daemon commits from /api/kiln/forge-activity (serve-original
+// reads them from the swarm daemon on this host) and settle one tx per real
+// commit, built exactly the way the store's own builder builds them: same
+// field order, same SHA-256 hash recipes for tx and block, one block per tx,
+// heights continuing from the current chain head. Each mirrored tx carries
+// forgeSha (the daemon commit sha) — that is the citation anyone can verify
+// against the daemon, and the dedupe key: extraTxs persist across reloads,
+// so a sha already in the ledger is never appended twice.
+// ---------------------------------------------------------------------------
+const L1_SETTLE_TO = "0x4c1e7a91b0c3d2e8f5a6478901234567890abcde"; // settle address the store's own actions (star/claim/import) write to
+
+async function forgeTxHash(tx) {
+  return `0x${(await sha256Hex(JSON.stringify(tx))).slice(0, 48)}`;
+}
+
+async function forgeBlockHash(block) {
+  const line = `${block.height}:${block.parent}:${block.timestamp}:${block.txs.map((t) => t.hash).join(",")}`;
+  return `0x${(await sha256Hex(line)).slice(0, 48)}`;
+}
+
+export async function mirrorForgeActivity() {
+  try {
+    const data = await fetch("/api/kiln/forge-activity", { cache: "no-store" })
+      .then((r) => r.json())
+      .catch(() => null);
+    const acts = Array.isArray(data?.activities) ? data.activities : [];
+    if (!acts.length) return 0;
+    const s = store.getState();
+    const seen = new Set((s.extraTxs || []).filter((t) => t && t.forgeSha).map((t) => t.forgeSha));
+    const fresh = acts
+      .filter((a) => a && a.sha && a.timestamp && !seen.has(a.sha))
+      .sort((x, y) => (Date.parse(x.timestamp) || 0) - (Date.parse(y.timestamp) || 0));
+    if (!fresh.length) return 0;
+    const head = chainBlocks(store.getState())[0];
+    let parent = head ? head.hash : "0x0";
+    let height = head ? head.height : 0;
+    const extraTxs = [...(s.extraTxs || [])];
+    const extraBlocks = [...(s.extraBlocks || [])];
+    for (const a of fresh) {
+      height += 1;
+      const repoId = `${a.owner}/${a.repo}`;
+      const base = {
+        type: "forge_commit",
+        from: KILN_ADDRESS,
+        to: L1_SETTLE_TO,
+        amount: 0,
+        memo: `${a.authorName} · ${repoId} — ${a.message}`,
+        repoId,
+        timestamp: a.timestamp,
+        block: height,
+        forgeSha: a.sha,
+      };
+      const tx = { ...base, hash: await forgeTxHash(base) };
+      const blockBase = { height, parent, timestamp: a.timestamp, txs: [tx] };
+      const block = { ...blockBase, hash: await forgeBlockHash(blockBase) };
+      extraTxs.push(tx);
+      extraBlocks.push(block);
+      parent = block.hash;
+    }
+    store.setState({ extraTxs, extraBlocks });
+    return fresh.length;
+  } catch (e) {
+    console.warn("kiln-forge activity mirror", e);
+    return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet transfers: one settled L1 tx between two wallets in this account —
+// the main wallet, an agent wallet, or a model wallet.
+//
+// The store's own tx builder (O) and settle (Y) are module-private, so this
+// replicates their recipes exactly, the same way the forge mirror above
+// replicates the hash recipes: tx base in O's field order, tx hash =
+// sha256(JSON.stringify(base)), one block per tx built like oe (height /
+// parent / timestamp + the block-hash line), heights continuing from the
+// current chain head. Field balances (main balance, agent wallet.balance)
+// move in the SAME setState as the ledger append, so a throw anywhere above
+// leaves every balance untouched; model wallets carry no balance field — the
+// settled tx alone moves their ledger-derived balance. The server copy is
+// posted best-effort, exactly like Y posts it (failures swallowed).
+// ---------------------------------------------------------------------------
+
+function ledgerBalanceOf(state, address) {
+  let balance = 0;
+  for (const t of chainTxs(state) || []) {
+    if (!t || (t.from !== address && t.to !== address)) continue;
+    balance += t.to === address ? +(t.amount ?? 0) : -(t.amount ?? 0);
+  }
+  return balance;
+}
+
+function resolveWallet(state, address) {
+  if (state.wallet && address === state.wallet.address) return { kind: "main", balance: state.balance ?? 0 };
+  const agent = (state.agents || []).find((a) => a.wallet && a.wallet.address === address);
+  if (agent) return { kind: "agent", agent, balance: agent.wallet.balance ?? 0 };
+  const conn = (state.modelConnections || []).find((m) => m.walletAddress === address);
+  if (conn) return { kind: "model", connection: conn, balance: ledgerBalanceOf(state, address) };
+  return null;
+}
+
+export async function transferFunds({ fromAddress, toAddress, amount, memo } = {}) {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter an amount more than 0 KLN");
+  if (!fromAddress || !toAddress || fromAddress === toAddress) throw new Error("Pick two different wallets");
+  const s = store.getState();
+  const from = resolveWallet(s, fromAddress);
+  const to = resolveWallet(s, toAddress);
+  if (!from || !to) throw new Error("Wallet not found in this account");
+  if (from.balance < amt) throw new Error("Not enough KLN in this wallet");
+  const head = chainBlocks(store.getState())[0];
+  const height = head ? head.height + 1 : 1;
+  const timestamp = new Date().toISOString();
+  const base = { type: "transfer", from: fromAddress, to: toAddress, amount: amt, memo: memo || "Transfer", repoId: undefined, timestamp, block: height, merkleRoot: undefined };
+  const tx = { ...base, hash: await forgeTxHash(base) };
+  const blockBase = { height, parent: head ? head.hash : "0x0", timestamp, txs: [tx] };
+  const block = { ...blockBase, hash: await forgeBlockHash(blockBase) };
+  const st = store.getState();
+  const patch = { extraTxs: [...(st.extraTxs || []), tx], extraBlocks: [...(st.extraBlocks || []), block] };
+  if (from.kind === "main" || to.kind === "main") patch.balance = (st.balance ?? 0) + (to.kind === "main" ? amt : 0) - (from.kind === "main" ? amt : 0);
+  if (from.kind === "agent" || to.kind === "agent") {
+    patch.agents = (st.agents || []).map((a) => {
+      if (!a.wallet) return a;
+      let bal = a.wallet.balance ?? 0;
+      if (from.kind === "agent" && a.id === from.agent.id) bal -= amt;
+      if (to.kind === "agent" && a.id === to.agent.id) bal += amt;
+      return bal === (a.wallet.balance ?? 0) ? a : { ...a, wallet: { ...a.wallet, balance: bal } };
+    });
+  }
+  store.setState(patch);
+  try {
+    await fetch(`/api/kiln/l1`, { method: `POST`, headers: { "content-type": "application/json" }, body: JSON.stringify({ block, tx }) });
+  } catch {}
+  return tx;
+}
+
 export async function bootKilnAccount() {
   if (booting) return booting;
   booting = (async () => {
     try {
       const doc = await fetch("/kiln-account.json", { cache: "no-store" }).then((r) => r.json());
       if (!doc?.account) return null;
+      const sig = `${doc.publishedAt || ""}|${doc.merkle || ""}|${(doc.repos || []).length}`;
+      if (sig === lastCapsuleSig && Array.isArray(globalThis.__KILN_FORGE_REPOS)) {
+        await mirrorForgeActivity();
+        return doc;
+      }
       mergeRepos(doc);
+      lastCapsuleSig = sig;
       const s = store.getState();
       if (s.wallet?.handle === "kiln") {
         store.getState().upsertProfile({ handle: "kiln", displayName: "KILN", bio: doc.account.bio, location: "on-chain", address: s.wallet.address || KILN_ADDRESS, kind: "user", lab: "KILN", website: "/", highlight: "Origin of the forge" });
       }
       await seatAgents(doc);
+      await mirrorForgeActivity();
       return doc;
     } catch (e) {
       console.warn("kiln-forge boot", e);
@@ -154,6 +335,8 @@ export async function bootKilnAccount() {
 
 globalThis.__KILN_ENSURE_WALLET = ensureWallet;
 globalThis.__KILN_BOOT = bootKilnAccount;
+globalThis.__KILN_FORGE_ACTIVITY = mirrorForgeActivity;
+globalThis.__KILN_TRANSFER = transferFunds;
 globalThis.__KILN_ADDRESS = KILN_ADDRESS;
 
 let wrappedImport = false;
@@ -188,8 +371,208 @@ function wrapImportGithub() {
   store.setState({ importGithub: wrapped });
 }
 
+// ---------------------------------------------------------------------------
+// Motion + mobile chrome (tabs-audit program, 2026-11-02).
+//
+// One small, coherent motion system for the whole app, plus three mobile
+// chrome repairs the audit proved: the bottom bar had NO active state, the
+// header "Sign in" wrapped to two lines at 375px (the header Create button
+// duplicates the bottom bar's raised Create on phones — hiding it below
+// 640px frees the line), and a phone had NO way to open global search
+// (header search is hidden <md and there is no ⌘K key) — so a search
+// button joins the header on small screens and drives the same palette.
+//
+// Hard constraints (the typing-freeze lesson): transform/opacity only, no
+// JS animation loops, 200-480ms (retuned 2026-11-03 at the architect's
+// word — the 120-280ms band was too fast for him to see), and every
+// animation lives behind
+// @media (prefers-reduced-motion: no-preference). The route entrance is
+// re-armed by history hooks, never by timers or observers that keep
+// running; the one MutationObserver below disconnects the moment the
+// shell chrome it waits for exists.
+// ---------------------------------------------------------------------------
+(function installKilnMotion() {
+  try {
+    if (globalThis.__KILN_MOTION__) return;
+    globalThis.__KILN_MOTION__ = true;
+
+    const css = `
+@media (prefers-reduced-motion: no-preference) {
+  .kiln-view { animation: kilnRise .48s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes kilnRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .kiln-sheet-in { animation: kilnSheetUp .45s cubic-bezier(.32,.72,.24,1) both; }
+  @keyframes kilnSheetUp { from { opacity: .35; transform: translateY(32px); } to { opacity: 1; transform: translateY(0); } }
+  .kiln-fade-in { animation: kilnFade .35s ease-out both; }
+  @keyframes kilnFade { from { opacity: 0; } to { opacity: 1; } }
+  .kiln-tabbar a, .kiln-tabbar button { transition: transform .2s ease-out, color .35s ease-out; }
+  .kiln-tabbar a:active, .kiln-tabbar button:active { transform: scale(.94); }
+  .btn:active { transform: scale(.97); }
+  .btn { transition: transform .2s ease-out, filter .35s ease-out, background-color .35s ease-out, color .35s ease-out; }
+  .kiln-press { transition: transform .2s ease-out; }
+  .kiln-press:active { transform: scale(.98); }
+  .kiln-card-hover { transition: transform .26s cubic-bezier(.2,.7,.2,1), border-color .26s ease-out; }
+  .kiln-card-hover:hover { transform: translateY(-2px); }
+  .kiln-pulse-dot { animation: kilnPulse 1.6s ease-in-out infinite; }
+  @keyframes kilnPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+}
+.kiln-shimmer { position: relative; overflow: hidden; background: var(--color-surface-2, rgba(255,255,255,.05)); }
+@media (prefers-reduced-motion: no-preference) {
+  .kiln-shimmer::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+    background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.06) 50%, transparent 80%);
+    animation: kilnShimmer 1.6s ease-in-out infinite; }
+  @keyframes kilnShimmer { to { transform: translateX(100%); } }
+}
+.kiln-tabbar a { position: relative; }
+.kiln-tabbar a.kiln-tab-on { color: var(--color-fg); }
+.kiln-tabbar a.kiln-tab-on::after { content: ""; position: absolute; top: 0; left: 50%; width: 18px; height: 2px;
+  margin-left: -9px; border-radius: 2px; background: var(--color-accent); }
+@media (max-width: 639.98px) {
+  header a, header button { white-space: nowrap; }
+  header button[aria-label="Create"] { display: none; }
+}
+.kiln-search-btn svg { display: block; }
+@media (min-width: 768px) { .kiln-search-btn { display: none; } }
+`;
+    const style = document.createElement("style");
+    style.id = "kiln-motion-css";
+    style.textContent = css;
+    document.head.appendChild(style);
+
+    const TAB_FOR = [
+      [/^\/account(\/|$)/, "/account"],
+      [/^\/repos(\/|$)/, "/repos"],
+      [/^\/notifications(\/|$)/, "/notifications"],
+      [/^\/wallet(\/|$)/, "/wallet"],
+    ];
+
+    function findTabbar() {
+      const wa = document.querySelector('a[href="/wallet"]');
+      let n = wa;
+      while (n && n !== document.body) {
+        if (getComputedStyle(n).position === "fixed") return n;
+        n = n.parentElement;
+      }
+      return null;
+    }
+
+    function markTab(bar) {
+      const path = location.pathname;
+      const hit = TAB_FOR.find(([re]) => re.test(path));
+      for (const a of bar.querySelectorAll("a[href]")) {
+        const on = !!hit && a.getAttribute("href") === hit[1];
+        a.classList.toggle("kiln-tab-on", on);
+        if (on) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      }
+    }
+
+    function armSearchButton() {
+      const header = document.querySelector("header");
+      if (!header || header.querySelector(".kiln-search-btn")) return;
+      const bell = [...header.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "") === "Notifications");
+      if (!bell || !bell.parentElement) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = (bell.getAttribute("class") || "btn relative h-8 px-2") + " kiln-search-btn";
+      btn.setAttribute("aria-label", "Search");
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+      btn.addEventListener("click", () => {
+        // The shell's own contract (AppShell): a `kiln:palette` window
+        // event toggles the palette — the same path its ⌘K handler
+        // uses. Proven live in harness (overlay + focused input). No
+        // keydown fallback: the palette toggle is symmetric, so a
+        // "did it open?" fallback fired on a wrong selector (the
+        // palette is not a [role=dialog]) would just close it again —
+        // that exact bug ate the first version of this button.
+        window.dispatchEvent(new Event("kiln:palette"));
+      });
+      bell.parentElement.insertBefore(btn, bell);
+    }
+
+    let observedHeader = null;
+    let headerObserver = null;
+    function watchHeader(header) {
+      if (!header || observedHeader === header) return;
+      if (headerObserver) headerObserver.disconnect();
+      observedHeader = header;
+      // The header is React-owned: its nav re-renders (the chain count
+      // ticks) and reconciliation removes foreign children — a /papers
+      // boot ate two placements this way. Watch the header alone
+      // (childList only; the tick is characterData and never fires it)
+      // and put the button back whenever it is wiped.
+      headerObserver = new MutationObserver(() => {
+        if (!header.querySelector(".kiln-search-btn")) armSearchButton();
+      });
+      headerObserver.observe(header, { childList: true, subtree: true });
+    }
+
+    let rootObserver = null;
+    let observedRoot = null;
+    function watchRoot(root) {
+      if (!root || observedRoot === root) return;
+      if (rootObserver) rootObserver.disconnect();
+      observedRoot = root;
+      rootObserver = new MutationObserver(() => enhanceChrome());
+      rootObserver.observe(root, { childList: true });
+    }
+
+    function enhanceChrome() {
+      const bar = findTabbar();
+      if (bar) {
+        bar.classList.add("kiln-tabbar");
+        markTab(bar);
+      }
+      armSearchButton();
+      const header = document.querySelector("header");
+      if (header) watchHeader(header);
+      watchRoot(document.querySelector("body > div"));
+    }
+
+    function viewIn() {
+      try {
+        const bar = findTabbar();
+        if (bar) { bar.classList.add("kiln-tabbar"); markTab(bar); }
+        armSearchButton();
+        watchHeader(document.querySelector("header"));
+        const root = document.querySelector("body > div");
+        if (!root) return;
+        const outlet = [...root.children].find((el) => el.tagName !== "HEADER" && el.tagName !== "NAV" && el.tagName !== "SCRIPT" && getComputedStyle(el).position !== "fixed");
+        if (!outlet) return;
+        outlet.classList.remove("kiln-view");
+        void outlet.offsetWidth;
+        outlet.classList.add("kiln-view");
+      } catch {}
+    }
+
+    // The shell mounts after this module evaluates, in pieces — and the
+    // app's second boot pass (hydration runs twice by design in
+    // kiln-forge's start()) REMOUNTS it wholesale: on a /papers boot the
+    // tab bar class and the search button were both live at +8s and gone
+    // at +16s with the elements replaced. So the watchers are layered
+    // and shallow by design (childList only, never subtree on the big
+    // containers — no callback storms from list renders):
+    //   body  → the root div itself was replaced: rebind + re-enhance
+    //   root  → header/nav replaced: re-enhance + re-watch the header
+    //   header→ the button was wiped inside it: re-arm (watchHeader)
+    // Navigation (viewIn) re-marks the active tab on top of these.
+    const bodyObserver = new MutationObserver(() => enhanceChrome());
+    if (document.body) bodyObserver.observe(document.body, { childList: true });
+    enhanceChrome();
+
+    for (const m of ["pushState", "replaceState"]) {
+      const orig = history[m];
+      history[m] = function (...args) { const r = orig.apply(this, args); requestAnimationFrame(viewIn); return r; };
+    }
+    addEventListener("popstate", () => requestAnimationFrame(viewIn));
+  } catch {}
+})();
+
 function start() {
   const persist = store.persist;
+  // Identity arms lazily (daemon session restore + wallet link/backup
+  // wiring, in kiln-identity.js); a failure there must never block the
+  // forge boot.
+  import("./kiln-identity.js").then((m) => { try { m.armIdentity(); } catch {} }).catch(() => {});
   const run = () => { wrapImportGithub(); bootKilnAccount(); };
   if (persist?.hasHydrated?.()) run();
   else if (persist?.onFinishHydration) persist.onFinishHydration(run);

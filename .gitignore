@@ -21,3 +21,5 @@ kiln-original/assets/
 Thumbs.db
 *.pyc
 __pycache__/
+data/
+scripts/blog-views.json

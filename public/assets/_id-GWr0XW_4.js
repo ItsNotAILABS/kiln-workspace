@@ -1,1 +1,3 @@
-export { component } from "./chain-BeGhQWqf.js";
+import { KilnReceipt } from "./kiln-receipt.js";
+
+export { KilnReceipt as component };

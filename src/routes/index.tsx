@@ -1,9 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
 import { VideoFrame } from "@/components/VideoFrame";
+import { ForgeDoors, ForgeVersion } from "@/components/ForgeVersion";
 import { allRepos, starCount, useKiln } from "@/lib/kiln/store";
+import {
+  swarmCapabilities,
+  swarmGitRepos,
+  swarmWorkspaces,
+} from "@/lib/kiln/swarm";
+import type { WorkspaceView } from "@/lib/kiln/swarm-proxy";
 
 export const Route = createFileRoute("/")({ component: Home });
+
+interface LiveFacts {
+  workspaces: WorkspaceView[];
+  workspaceCount: number;
+  repoCount: number;
+  abilityCount: number;
+}
 
 function Home() {
   const kiln = useKiln();
@@ -11,6 +26,41 @@ function Home() {
     .filter((r) => r.visibility === "public")
     .sort((a, b) => starCount(b, kiln) - starCount(a, kiln))
     .slice(0, 6);
+
+  // Live forge facts for the protocol section below — read from the
+  // forge API at load; if the forge doesn't answer, the section says
+  // so instead of printing invented numbers.
+  const [facts, setFacts] = useState<LiveFacts | null>(null);
+  const [factsError, setFactsError] = useState<string | null>(null);
+  useEffect(() => {
+    let on = true;
+    Promise.all([
+      swarmWorkspaces({ data: {} }),
+      swarmGitRepos(),
+      swarmCapabilities(),
+    ])
+      .then(([ws, repos, caps]) => {
+        if (!on) return;
+        if (!ws.ok) {
+          setFactsError(ws.error);
+          return;
+        }
+        setFacts({
+          workspaces: [...ws.workspaces]
+            .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+            .slice(0, 6),
+          workspaceCount: ws.workspaces.length,
+          repoCount: repos.ok ? repos.repos.length : 0,
+          abilityCount: caps.ok ? caps.capabilities.abilities.length : 0,
+        });
+      })
+      .catch((e) => {
+        if (on) setFactsError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      on = false;
+    };
+  }, []);
   return (
     <div className="pb-8">
       <section className="relative overflow-hidden rounded-xl border border-border">
@@ -79,6 +129,98 @@ function Home() {
         <VideoFrame src="/marketing/lattice.mp4" poster="/marketing/lattice.jpg" caption="Hilbert-painted cells" />
       </section>
 
+      {/* Added 2026-10-28 (edit, not a rewrite): the pocketnova.app
+          protocol layer — workspaces, accounts, agents — with every
+          number read live from the forge API. */}
+      <section className="mt-20">
+        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">The pocketnova.app protocol</p>
+        <h2 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl">Workspaces for people and their agents</h2>
+        <p className="mt-4 max-w-2xl text-muted">
+          Repos group into <strong>workspaces</strong> owned by <strong>people with accounts</strong>,
+          and worked by <strong>agents with scoped identities</strong> — every AI welcome, none of
+          them root. What changes through any door is immediately true through all of them, because
+          there is only ever one forge.
+        </p>
+        <p className="mt-4 font-mono text-sm text-muted">
+          {factsError ? (
+            <>Live counts unavailable right now — the forge didn't answer ({factsError}). This page prints real numbers or none.</>
+          ) : facts === null ? (
+            <>Reading the forge…</>
+          ) : (
+            <>
+              <span className="text-fg">{facts.workspaceCount}</span> workspaces ·{" "}
+              <span className="text-fg">{facts.repoCount}</span> repos ·{" "}
+              <span className="text-fg">{facts.abilityCount}</span> abilities — read live from the forge just now
+            </>
+          )}
+        </p>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <div className="panel p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Organize</p>
+            <h3 className="mt-2 font-display text-2xl">Workspaces</h3>
+            <p className="mt-2 text-sm text-muted">
+              Repos and sites grouped under one owner, nestable into trees, with a live status
+              rollup and per-repo project details computed from the bare repos themselves.
+            </p>
+            <Link to="/workspaces" className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+              Browse workspaces <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+          <div className="panel p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Identify</p>
+            <h3 className="mt-2 font-display text-2xl">Accounts + agents</h3>
+            <p className="mt-2 text-sm text-muted">
+              A person signs up and owns a namespace. Their agents get scoped, revocable tokens —
+              minted by the owner, shown once — and act as their human, inside their scopes only.
+            </p>
+            <Link to="/join" className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+              Create your account <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+          <div className="panel p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">Connect</p>
+            <h3 className="mt-2 font-display text-2xl">Every door, one forge</h3>
+            <p className="mt-2 text-sm text-muted">
+              REST, an installable SDK + CLI kit, and an MCP server — vendor-neutral, built for any
+              AI. The agent flow is five steps: discover, install, import, organize, verify.
+            </p>
+            <Link to="/agents" className="mt-4 inline-flex items-center gap-1 text-sm text-seal hover:underline">
+              The agent flow <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+        </div>
+        {facts && facts.workspaces.length > 0 ? (
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {facts.workspaces.map((w) => (
+              <Link
+                key={w.id}
+                to="/workspaces/$workspaceId"
+                params={{ workspaceId: w.id }}
+                className="panel group block p-4 transition-colors hover:border-seal"
+              >
+                <p className="font-display text-lg">{w.name}</p>
+                <p className="font-mono text-xs text-subtle">{w.owner}/{w.slug}</p>
+                {w.description ? (
+                  <p className="mt-2 line-clamp-2 text-sm text-muted">{w.description}</p>
+                ) : null}
+                <p className="mt-3 text-[11px] text-subtle">
+                  {w.repos.length} repo{w.repos.length === 1 ? "" : "s"}
+                  {w.siteIds.length ? ` · ${w.siteIds.length} site${w.siteIds.length === 1 ? "" : "s"}` : ""}
+                </p>
+              </Link>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Link to="/welcome" className="btn-primary btn h-10 px-5">Get started</Link>
+          <Link to="/join" className="btn h-10 px-5">Create account</Link>
+        </div>
+        <div className="mt-8">
+          <ForgeVersion />
+          <ForgeDoors />
+        </div>
+      </section>
+
       <section className="mt-20">
         <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted">On the forge</p>
         <h2 className="mt-3 font-display text-3xl sm:text-4xl">Public trees</h2>
@@ -121,7 +263,7 @@ function Home() {
         {[
           ["Product", ["/explore", "Explore"], ["/marketplace", "Marketplace"], ["/pricing", "Pricing"], ["/apps", "Apps"]],
           ["Create", ["/studio", "Studio"], ["/new", "New repository"], ["/new?tab=import", "Import GitHub"], ["/gists", "Gists"]],
-          ["Docs", ["/start", "Get started"], ["/architecture", "Architecture"], ["/papers", "Papers"], ["/cli", "CLI"], ["/mcp", "MCP"]],
+          ["Docs", ["/start", "Get started"], ["/agents", "Agents"], ["/architecture", "Architecture"], ["/papers", "Papers"], ["/cli", "CLI"], ["/mcp", "MCP"]],
         ].map(([title, ...links]) => (
           <div key={String(title)}>
             <p className="text-[11px] uppercase tracking-[0.16em] text-subtle">{title as string}</p>

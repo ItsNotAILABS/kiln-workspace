@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { studioGenerate } from "@/lib/kiln/github";
 import { langOf, useKiln } from "@/lib/kiln/store";
@@ -85,6 +85,7 @@ function Studio() {
   }
 
   return (
+    <>
     <div className="relative min-h-[calc(100dvh-3.5rem)]">
       <video
         className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-30"
@@ -118,6 +119,59 @@ function Studio() {
           </div>
           {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
         </form>
+      </div>
+    </div>
+    <StudioSuite />
+    </>
+  );
+}
+
+/**
+ * The rest of the suite (added 2026-10-28 as an edit under the original
+ * hero — his correction: Studio is the full creation suite, everything
+ * users make starts here). These are the app's user-creation doors and
+ * nothing else: no forge administration, no registry forms, no tokens.
+ * The forge above is door one; these are the other ways in.
+ */
+function StudioSuite() {
+  return (
+    <div className="mx-auto max-w-5xl px-4 pb-20 pt-4">
+      <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-accent">Studio</p>
+      <h2 className="mt-3 font-display text-4xl leading-[0.95] sm:text-5xl">The creation suite</h2>
+      <p className="mt-4 max-w-2xl text-muted">
+        The forge above is door one — describe it, and it exists. Everything else a user
+        makes on KILN starts in this room too. Pick how you want to begin.
+      </p>
+      <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <Link to="/new" className="panel group block p-5 transition-colors hover:border-seal">
+          <p className="font-display text-2xl">New repository</p>
+          <p className="mt-2 text-sm text-muted">
+            Start blank and shape it yourself — code, an agent with its own wallet and a
+            resident process, a protocol, or a model with weights and a card. Every kind
+            is a sealed tree with a computer inside.
+          </p>
+          <p className="mt-4 text-sm text-seal group-hover:underline">Start blank →</p>
+        </Link>
+        <Link
+          to="/new"
+          search={{ tab: "import" }}
+          className="panel group block p-5 transition-colors hover:border-seal"
+        >
+          <p className="font-display text-2xl">Import from GitHub</p>
+          <p className="mt-2 text-sm text-muted">
+            Bring a tree you already have. It lands as a sealed KILN repository — the same
+            computer, the same runtime, your work intact.
+          </p>
+          <p className="mt-4 text-sm text-seal group-hover:underline">Import a tree →</p>
+        </Link>
+        <Link to="/gists" className="panel group block p-5 transition-colors hover:border-seal">
+          <p className="font-display text-2xl">New gist</p>
+          <p className="mt-2 text-sm text-muted">
+            The small end of the suite: one file, sealed and shareable, in seconds — a
+            snippet, a sketch, a thought worth keeping.
+          </p>
+          <p className="mt-4 text-sm text-seal group-hover:underline">Write a gist →</p>
+        </Link>
       </div>
     </div>
   );
