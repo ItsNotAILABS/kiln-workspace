@@ -33,7 +33,7 @@ import { readOutside, readCrew, runIngestTool, phoneCard, publicForge } from "./
 import { listSpace, recallMemory } from "./kiln-space.mjs";
 import { sitComputer } from "./kiln-sit.mjs";
 import { boardGpu, claimGpu, offerGpu, receiptGpu } from "./kiln-gpu.mjs";
-import { buyProduct, catalog, claimOpening, listProduct, tillView, transferNote } from "./kiln-market.mjs";
+import { buyProduct, catalog, claimOpening, listProduct, tillView, transferNote, unlistProduct } from "./kiln-market.mjs";
 import { loadWallet, signLedger } from "./kiln-wallet.mjs";
 import { noteChecks, receiptOf, repoBoard } from "./kiln-board.mjs";
 import { shipComputer } from "./kiln-ship.mjs";
@@ -798,8 +798,7 @@ export async function handleLoop(pathname, req) {
   }
 
   if (action === "products") {
-    if (!acc) return json(401, { ok: false, error: "sign in" });
-    return json(200, catalog({ seller: data.seller || "" }));
+    return json(200, catalog({ seller: data.seller || "", q: data.q || data.query || "" }));
   }
 
   if (action === "list_product") {
@@ -814,7 +813,14 @@ export async function handleLoop(pathname, req) {
       title: data.title,
       cents: data.cents,
       stock: data.stock,
+      description: data.description || "",
     });
+    return json(out.ok ? 200 : 400, out);
+  }
+
+  if (action === "unlist") {
+    if (!acc) return json(401, { ok: false, error: "sign in" });
+    const out = unlistProduct({ seller: acc.handle, productId: data.productId || data.id });
     return json(out.ok ? 200 : 400, out);
   }
 
