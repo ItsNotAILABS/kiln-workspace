@@ -153,15 +153,19 @@ async function seatMachine(id) {
 }
 
 async function seatAgents(doc) {
+  // One computer open at start (architect, 2026-11-26): only the origin
+  // repo's computer opens, with a single root agent — the conductor.
+  // Every other agent and computer opens on demand from that root
+  // (Studio Spawn / Sub-agent / a job typed into an empty repo), never
+  // as an up-front pile across the account's repos.
   const origin = (doc.repos || []).map((r) => r.id);
-  for (const id of origin.slice(0, 8)) {
-    try {
-      const st = store.getState();
-      if (!st.agents.some((a) => a.repoId === id && a.role === "builder" && a.resident)) await store.getState().spawnAgent({ role: "builder", repoId: id, resident: true });
-      if (!store.getState().agents.some((a) => a.repoId === id && a.role === "conductor" && a.resident)) await store.getState().spawnAgent({ role: "conductor", repoId: id, resident: true });
-      await seatMachine(id);
-    } catch {}
-  }
+  const id = origin[0];
+  if (!id) return;
+  try {
+    const st = store.getState();
+    if (!st.agents.some((a) => a.role === "conductor" && a.resident)) await store.getState().spawnAgent({ role: "conductor", repoId: id, resident: true });
+    await seatMachine(id);
+  } catch {}
 }
 
 // ---------------------------------------------------------------------------

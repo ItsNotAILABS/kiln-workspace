@@ -34,7 +34,7 @@ function component(){
   return j.jsxs("div",{children:[
     j.jsx(Chrome,{repo}),
     j.jsxs("div",{className:"mt-5 grid gap-6 lg:grid-cols-[1fr_16rem]",children:[
-      j.jsxs("div",{children:[j.jsx(Tree,{repo}), readme?j.jsx("div",{className:"mt-6",children:j.jsx(Readme,{source:readme.content})}):null]}),
+      j.jsxs("div",{children:[j.jsx(Tree,{repo}), readme?j.jsx("div",{className:"mt-6",children:j.jsx(Readme,{source:readme.content,repo})}):null]}),
       j.jsx(About,{repo})
     ]})
   ]});

@@ -287,28 +287,28 @@ export function StudioTabs({ initialPrompt = "" }) {
         if (!dead && preferred && preferred !== repoId) setRepoId(preferred);
         const id = preferred || repoId;
         const seat = async () => {
+          // One computer open at Studio start (architect, 2026-11-26):
+          // seat only the root — a single resident conductor on the
+          // picked repo's computer — and only when no root exists yet.
+          // Never fill the crew up front: more agents, each opening
+          // their own computer, grow from this one on demand (Spawn,
+          // Spawn crew, the conductor's Sub-agent button, or a job
+          // typed into an empty repo).
           const live2 = useKiln.getState();
-          const seated = live2.agents.filter((a) => a.repoId === id);
-          const have = new Set(seated.map((a) => a.role));
-          const need = ["conductor", "agi", "architect", "builder", "reviewer", "deployer", "cipher", "indexer"];
-          const missing = need.filter((r) => !have.has(r));
-          const crew = live2.crews.find((c) => c.repoId === id);
-          if (missing.length && id) {
-            if (!seated.length && !crew) {
-              await live2.spawnCrew({ repoId: id, modelId: live2.defaultModelId || model });
-            } else {
-              for (const role of missing) {
-                await live2.spawnAgent({
-                  role,
-                  repoId: id,
-                  resident: true,
-                  modelId: live2.defaultModelId || model,
-                  crewId: crew?.id,
-                });
-              }
-            }
+          const rootOpen = live2.agents.some((a) => a.role === "conductor" && a.resident);
+          if (!rootOpen && id) {
+            await live2.spawnAgent({
+              role: "conductor",
+              repoId: id,
+              resident: true,
+              modelId: live2.defaultModelId || model,
+            });
           }
-          const lead = leadAgent(useKiln.getState().agents.filter((a) => a.repoId === id));
+          const now = useKiln.getState();
+          const lead =
+            leadAgent(now.agents.filter((a) => a.repoId === id)) ||
+            leadAgent(now.agents.filter((a) => a.role === "conductor" && a.resident)) ||
+            leadAgent(now.agents);
           if (!dead && lead) setActive(lead.id);
         };
         await seat();
@@ -353,10 +353,9 @@ export function StudioTabs({ initialPrompt = "" }) {
     await wallet();
     setBusy(true);
     try {
-      let st = useKiln.getState();
-      if (!st.crews.find((c) => c.repoId === repoId)) {
-        await st.spawnCrew({ repoId, modelId: model });
-      }
+      // Spawn opens exactly the agent asked for, seated on the
+      // conductor — it must not seat the whole crew first. The full
+      // crew is its own explicit act (Spawn crew).
       let last = active;
       for (const r of roles) {
         const n = useKiln.getState().agents.filter((a) => a.repoId === repoId && a.role === r).length;
@@ -488,7 +487,10 @@ function CrewPane({ agents, active, setActive, repoId, model, booting, onSpawn }
       await wallet();
       let seated = useKiln.getState().agents.filter((a) => a.repoId === repoId);
       if (!seated.length) {
-        await useKiln.getState().spawnCrew({ repoId, modelId: model });
+        // A typed job is an explicit trigger: open this repo's computer
+        // with its conductor only — the full crew stays on demand
+        // (Spawn crew), never an automatic pile.
+        await useKiln.getState().spawnAgent({ role: "conductor", repoId, resident: true, modelId: model });
         seated = useKiln.getState().agents.filter((a) => a.repoId === repoId);
       }
       const seatedNow = seated.length ? seated : useKiln.getState().agents;
@@ -1319,11 +1321,9 @@ function OneshotPane({ initialPrompt, modelId, onLanded }) {
       });
       setLog((l) => [...l, `${pack.via} · ${pack.files.length} files sealed`, `capsule ${repo.id}`]);
       toast(`One-shot ${repo.id}`);
-      try {
-        await useKiln.getState().spawnCrew({ repoId: repo.id, modelId });
-      } catch {
-        /* builder already seated by oneshot */
-      }
+      // No auto-crew on the new computer: it opens with the root only
+      // (a job typed on its Crew tab seats its conductor; Spawn and
+      // Spawn crew grow it from there).
       onLanded?.(repo.id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "One-shot failed";

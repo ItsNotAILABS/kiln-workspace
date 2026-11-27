@@ -6,6 +6,8 @@ function component(){
   const pages=(repo.files||[]).filter(f=>/\.(md|txt)$/i.test(f.path));
   const home=pages.find(f=>/^readme(\.md)?$/i.test(f.path.split("/").pop()||""))||pages[0];
   const current=pages.find(f=>f.path===sel)||home;
+  const imgBase=(current?.path||"").split("/").slice(0,-1).filter(Boolean);
+  const resolveSrc=(src)=>{const stack=[...imgBase];for(const seg of String(src).replace(/^\.\//,"").split("/")){if(seg==="..")stack.pop();else if(seg&&seg!==".")stack.push(seg)}return repo.owner&&repo.name?`/api/kiln/forge-file/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}?path=${encodeURIComponent(stack.join("/"))}`:src};
   return j.jsxs(Shell,{children:[
     j.jsxs("div",{className:"mt-5 grid gap-6 lg:grid-cols-[14rem_1fr_16rem]",children:[
       j.jsxs("aside",{className:"rounded-xl border border-border bg-surface p-3",children:[
@@ -17,7 +19,7 @@ function component(){
       ]}),
       j.jsxs("div",{children:[
         j.jsx("h2",{className:"font-display text-2xl tracking-tight",children:current?current.path:"Wiki"}),
-        current?j.jsx("div",{className:"mt-4",children:j.jsx(Markdown,{source:current.content||repo.readme||""})}):j.jsx(Empty,{title:"Welcome to the wiki",hint:"Markdown on this tree becomes wiki pages. Drop a .md onto the Code tab."})
+        current?j.jsx("div",{className:"mt-4",children:j.jsx(Markdown,{source:current.content||repo.readme||"",resolveSrc})}):j.jsx(Empty,{title:"Welcome to the wiki",hint:"Markdown on this tree becomes wiki pages. Drop a .md onto the Code tab."})
       ]}),
       j.jsx(About,{repo})
     ]})
