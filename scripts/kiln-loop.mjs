@@ -34,6 +34,20 @@ import { listSpace, recallMemory } from "./kiln-space.mjs";
 import { sitComputer } from "./kiln-sit.mjs";
 import { boardGpu, claimGpu, offerGpu, receiptGpu } from "./kiln-gpu.mjs";
 import { boardCompute, claimWork, postWork, submitWork } from "./kiln-compute.mjs";
+import {
+  acceptAsk,
+  acceptBring,
+  answerAsk,
+  openBring,
+  peopleBoard,
+  postAsk,
+  readProof,
+  returnAsk,
+  setAutopilot,
+  setShow,
+  takeAsk,
+  tickAutopilot,
+} from "./kiln-people.mjs";
 import { buyProduct, catalog, claimOpening, listProduct, tillView, transferNote, unlistProduct } from "./kiln-market.mjs";
 import { loadWallet, signLedger } from "./kiln-wallet.mjs";
 import { noteChecks, receiptOf, repoBoard } from "./kiln-board.mjs";
@@ -659,6 +673,31 @@ export async function handleLoop(pathname, req) {
   if (action === "computeSubmit") {
     if (!acc) return json(401, { ok: false, error: "sign in" });
     const out = submitWork({ id: data.id, seat: acc.handle, digest: data.digest });
+    return json(out.ok ? 200 : 400, out);
+  }
+
+  if (action === "people" || action === "peopleBoard") return json(200, peopleBoard());
+  if (action === "proof") {
+    const out = readProof({ id: data.id || "" });
+    return json(out.ok ? 200 : 404, out);
+  }
+  if (action === "ask" || action === "askTake" || action === "askAnswer" || action === "askAccept" || action === "askReturn" || action === "show" || action === "bring" || action === "bringAccept" || action === "autopilot" || action === "autopilotTick") {
+    if (!acc) return json(401, { ok: false, error: "sign in" });
+    const seat = acc.handle;
+    let out = { ok: false, error: "unknown people action" };
+    if (action === "ask") out = postAsk({ seat, text: data.text || data.question || "", cents: data.cents });
+    if (action === "askTake") out = takeAsk({ seat, id: data.id });
+    if (action === "askAnswer") out = answerAsk({ seat, id: data.id, text: data.text || data.answer || "" });
+    if (action === "askAccept") out = acceptAsk({ seat, id: data.id });
+    if (action === "askReturn") out = returnAsk({ seat, id: data.id });
+    if (action === "show") out = setShow({ seat, line: data.line || data.text || "" });
+    if (action === "bring") out = openBring({ seat });
+    if (action === "bringAccept") out = acceptBring({ seat, code: data.code });
+    if (action === "autopilot") {
+      const on = data.on === true || data.on === "true" || data.on === "on" || data.on === 1;
+      out = setAutopilot({ seat, on });
+    }
+    if (action === "autopilotTick") out = tickAutopilot({ seat });
     return json(out.ok ? 200 : 400, out);
   }
 
