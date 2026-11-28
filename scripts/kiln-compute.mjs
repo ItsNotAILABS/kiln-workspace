@@ -58,18 +58,48 @@ function writeState(jobs, opts) {
   fs.renameSync(tmp, file);
 }
 
+function isShort(piece) {
+  if (piece.kind === "sha256-chain") return piece.rounds <= 20_000;
+  if (piece.kind === "merkle") return piece.leaves.length <= 512;
+  if (piece.kind === "reduce") return piece.n <= 200_000;
+  return false;
+}
+
+function seatName(handle) {
+  return String(handle || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, 24);
+}
+
+function pieceFromJob(job) {
+  return {
+    kind: job.kind,
+    seed: job.seed || "kiln",
+    rounds: job.rounds || 0,
+    leaves: job.taskLeaves || [],
+    n: job.n || 0,
+  };
+}
+
 function pub(job) {
+  const open = job.status === "open" || job.status === "claimed" || job.status === "pending";
   return {
     id: job.id,
     kind: job.kind,
     status: job.status,
     seat: job.seat,
-    digest: job.digest || "",
+    claimer: job.claimer || "",
+    witness: job.witness || "",
+    digest: job.status === "done" ? job.digest || "" : "",
     rounds: job.rounds || 0,
     leaves: job.leaves || 0,
     n: job.n || 0,
+    seed: open ? job.seed || "" : "",
+    taskLeaves: open ? job.taskLeaves || [] : [],
     bounty: job.bounty || 0,
     box: job.box || "",
+    remote: !!job.remote,
     ms: job.ms || 0,
     error: job.error || "",
     at: job.at,
@@ -187,6 +217,7 @@ export function poolView() {
 }
 
 export function boardCompute(opts = {}) {
+  sweep(opts);
   return {
     ok: true,
     rail: "kiln-note",
@@ -196,19 +227,110 @@ export function boardCompute(opts = {}) {
   };
 }
 
+function sweep(opts) {
+  const now = Date.now();
+  for (const job of readState(opts)) {
+    if (job.status !== "claimed" && job.status !== "pending") continue;
+    if (!job.expires || now <= job.expires) continue;
+    if (job.bounty > 0) {
+      releaseNote({ box: job.box, to: job.seat, cents: job.bounty, memo: "compute expired" }, { dir: opts.dir });
+    }
+    patch(job.id, opts, (row) => {
+      row.status = "expired";
+      row.error = "claim expired";
+    });
+  }
+}
+
+function payWorker(job, opts, to) {
+  if (job.bounty > 0) {
+    const paid = releaseNote({ box: job.box, to, cents: job.bounty, memo: "compute paid" }, { dir: opts.dir });
+    if (!paid.ok) return paid;
+  }
+  patch(job.id, opts, (row) => {
+    row.status = "done";
+    row.digest = job.digest1 || row.digest1 || "";
+    row.ms = Date.now() - Date.parse(row.at);
+    row.error = "";
+  });
+  return { ok: true };
+}
+
+export function claimWork({ id, seat, claimMs } = {}, opts = {}) {
+  sweep(opts);
+  const who = seatName(seat);
+  if (!who || who === "kiln") return fail("not a seat");
+  const jobs = readState(opts);
+  const job = jobs.find((row) => row.id === id);
+  if (!job) return fail("unknown job");
+  if (!job.remote) return fail("this job runs on the origin");
+  if (job.seat === who) return fail("you posted this");
+  if (job.status !== "open") return fail("not open");
+  const hold = Number(claimMs) > 0 ? Number(claimMs) : 120_000;
+  patch(job.id, opts, (row) => {
+    row.status = "claimed";
+    row.claimer = who;
+    row.expires = Date.now() + hold;
+  });
+  return { ok: true, job: pub(readState(opts).find((row) => row.id === id)) };
+}
+
+export function submitWork({ id, seat, digest } = {}, opts = {}) {
+  sweep(opts);
+  const who = seatName(seat);
+  const hex = String(digest || "").toLowerCase();
+  if (!who || who === "kiln") return fail("not a seat");
+  if (!/^[a-f0-9]{64}$/.test(hex)) return fail("digest is 64 hex");
+  const job = readState(opts).find((row) => row.id === id);
+  if (!job) return fail("unknown job");
+  if (!job.remote) return fail("this job runs on the origin");
+  if (who === job.seat) return fail("you posted this");
+  if (job.status === "claimed" && job.claimer === who) {
+    if (!job.remote && isShort(pieceFromJob(job))) {
+      const out = runPiece(pieceFromJob(job));
+      if (out.digest !== hex) {
+        settleFail(job, opts, "digest does not match");
+        return fail("digest does not match");
+      }
+      patch(job.id, opts, (row) => {
+        row.digest1 = hex;
+      });
+      const fresh = readState(opts).find((row) => row.id === id);
+      const paid = payWorker(fresh, opts, who);
+      if (!paid.ok) return paid;
+      return { ok: true, job: pub(readState(opts).find((row) => row.id === id)) };
+    }
+    patch(job.id, opts, (row) => {
+      row.status = "pending";
+      row.digest1 = hex;
+      row.witness = who;
+      row.expires = Date.now() + (Number(opts.claimMs) > 0 ? Number(opts.claimMs) : 120_000);
+    });
+    return { ok: true, pending: true, job: pub(readState(opts).find((row) => row.id === id)) };
+  }
+  if (job.status === "pending" && who !== job.claimer) {
+    if (hex !== job.digest1) {
+      settleFail(job, opts, "digests disagree");
+      return fail("digests disagree");
+    }
+    const paid = payWorker(job, opts, job.claimer);
+    if (!paid.ok) return paid;
+    return { ok: true, agreed: true, job: pub(readState(opts).find((row) => row.id === id)) };
+  }
+  return fail("not your claim");
+}
+
 export async function postWork(input = {}, opts = {}) {
   const piece = pieceOf(input);
   if (!piece.ok) return piece;
-  const seat = String(input.seat || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "")
-    .slice(0, 24);
+  const seat = seatName(input.seat);
   if (!seat || seat === "kiln") return fail("not a seat");
   const bounty = input.bounty == null || input.bounty === "" ? 0 : Number(input.bounty);
   if (!Number.isInteger(bounty) || bounty < 0 || bounty > 1_000_000) return fail("bounty is integer cents");
+  const remote = opts.remote === true || !isShort(piece);
   const jobs = readState(opts);
   const open = jobs.filter((row) => row.status === "queued" || row.status === "running").length;
-  if (!opts.inline && open + waiting.length >= MAX_QUEUE) return fail("compute queue is full");
+  if (!remote && !opts.inline && open + waiting.length >= MAX_QUEUE) return fail("compute queue is full");
   const id = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const box = `box-${id}`;
   if (bounty > 0) {
@@ -218,21 +340,28 @@ export async function postWork(input = {}, opts = {}) {
   const job = {
     id,
     kind: piece.kind,
-    status: opts.inline ? "running" : "queued",
+    status: remote ? "open" : opts.inline ? "running" : "queued",
+    remote,
     seat,
     seed: piece.seed || "",
     rounds: piece.rounds || 0,
     leaves: piece.leaves ? piece.leaves.length : 0,
+    taskLeaves: piece.leaves || [],
     n: piece.n || 0,
     bounty,
     box: bounty > 0 ? box : "",
     digest: "",
+    digest1: "",
+    claimer: "",
+    witness: "",
+    expires: 0,
     ms: 0,
     error: "",
     at: new Date().toISOString(),
   };
   jobs.unshift(job);
   writeState(jobs, opts);
+  if (remote) return { ok: true, open: true, job: pub(job) };
   if (opts.inline) {
     const started = Date.now();
     try {

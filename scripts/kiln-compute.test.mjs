@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { claimOpening, tillView } from "./kiln-market.mjs";
-import { boardCompute, postWork, runPiece, waitWork } from "./kiln-compute.mjs";
+import { boardCompute, claimWork, postWork, runPiece, submitWork, waitWork } from "./kiln-compute.mjs";
 
 function scratch() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "kiln-compute-"));
@@ -58,4 +58,60 @@ test("the pool runs the work on a core and returns the digest", async () => {
   const board = boardCompute({ dir });
   assert.equal(board.jobs[0].status, "done");
   assert.match(board.not, /Not a bank/);
+});
+
+test("two seats must agree before the note moves", async () => {
+  const dir = scratch();
+  const poster = seat("po");
+  const worker = seat("wo");
+  const other = seat("ot");
+  claimOpening(poster, { dir, capCents: 10_000, openingCents: 2500 });
+  const opened = await postWork(
+    { seat: poster, kind: "sha256-chain", seed: "net", rounds: 4, bounty: 500 },
+    { dir, remote: true },
+  );
+  assert.equal(opened.open, true);
+  assert.equal(opened.job.digest, "");
+  assert.equal(tillView(poster, { dir }).cents, 2000);
+  const self = claimWork({ id: opened.job.id, seat: poster }, { dir });
+  assert.equal(self.ok, false);
+  const claimed = claimWork({ id: opened.job.id, seat: worker }, { dir });
+  assert.equal(claimed.ok, true);
+  const digest = runPiece({ kind: "sha256-chain", seed: "net", rounds: 4 }).digest;
+  const pending = submitWork({ id: opened.job.id, seat: worker, digest }, { dir });
+  assert.equal(pending.pending, true);
+  const clash = submitWork({ id: opened.job.id, seat: other, digest: "ab".repeat(32) }, { dir });
+  assert.equal(clash.ok, false);
+  assert.equal(clash.error, "digests disagree");
+  assert.equal(tillView(poster, { dir }).cents, 2500);
+});
+
+test("matching digests pay the claimer and an expired claim returns the note", async () => {
+  const dir = scratch();
+  const poster = seat("pp");
+  const worker = seat("ww");
+  const other = seat("oo");
+  claimOpening(poster, { dir, capCents: 10_000, openingCents: 2500 });
+  const opened = await postWork(
+    { seat: poster, kind: "merkle", leaves: ["a", "b"], bounty: 300 },
+    { dir, remote: true },
+  );
+  claimWork({ id: opened.job.id, seat: worker }, { dir });
+  const digest = runPiece({ kind: "merkle", leaves: ["a", "b"] }).digest;
+  submitWork({ id: opened.job.id, seat: worker, digest }, { dir });
+  const agreed = submitWork({ id: opened.job.id, seat: other, digest }, { dir });
+  assert.equal(agreed.agreed, true);
+  assert.equal(agreed.job.digest, digest);
+  assert.equal(tillView(poster, { dir }).cents, 2200);
+  assert.equal(tillView(worker, { dir }).cents, 300);
+  const again = await postWork(
+    { seat: poster, kind: "reduce", seed: 3, n: 20, bounty: 100 },
+    { dir, remote: true },
+  );
+  claimWork({ id: again.job.id, seat: worker, claimMs: 20 }, { dir });
+  await new Promise((r) => setTimeout(r, 40));
+  const board = boardCompute({ dir });
+  const row = board.jobs.find((job) => job.id === again.job.id);
+  assert.equal(row.status, "expired");
+  assert.equal(tillView(poster, { dir }).cents, 2200);
 });

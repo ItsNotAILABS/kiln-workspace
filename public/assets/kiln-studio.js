@@ -140,11 +140,6 @@ function hydrateWalletNow() {
     useKiln.setState(patch);
   }
   ensureHomeStub(wallet.handle);
-  try {
-    globalThis.__KILN_ACCOUNT = globalThis.__KILN_ACCOUNT || { handle: wallet.handle, address: wallet.address };
-  } catch {
-    /* ignore */
-  }
   return wallet;
 }
 

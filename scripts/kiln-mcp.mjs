@@ -6,7 +6,7 @@ import { handleMcp } from "./agent-turn.mjs";
 import { bearerFrom, loadUserRepos, ownsRepo, sessionAccount } from "./kiln-accounts.mjs";
 import { advanceBench, holdBench, openBench, readBench } from "./kiln-bench.mjs";
 import { offerGpu } from "./kiln-gpu.mjs";
-import { postWork } from "./kiln-compute.mjs";
+import { claimWork, postWork, submitWork } from "./kiln-compute.mjs";
 import { handleLoop } from "./kiln-loop.mjs";
 import { listSpace, spaceHome } from "./kiln-space.mjs";
 
@@ -210,10 +210,13 @@ const BENCH_TOOLS = [
   },
   {
     name: "kiln_compute",
-    description: "Run real work on this kiln's cores. kind is sha256-chain (rounds 1 to 250000), merkle (leaves), or reduce (n, seed). bounty is optional kiln-note cents locked up front. A failed job returns the note. A finished job keeps it as the core fee. Not a card. Not a miner on a chain this kiln does not run. Print digest.",
+    description: "Run real work. Short work runs on this kiln's cores. Long work, or action remote, stays open until a second seat claims it and a third seat returns the same digest. The kiln note then pays the claimer. A mismatch or an expired claim returns the note to the poster. action is post, claim, or submit. Not a card. Not a miner on a chain this kiln does not run.",
     inputSchema: {
       type: "object",
       properties: {
+        action: { type: "string", description: "post, claim, or submit" },
+        id: { type: "string" },
+        digest: { type: "string" },
         kind: { type: "string" },
         seed: { type: "string" },
         rounds: { type: "integer" },
@@ -577,6 +580,8 @@ async function runStudioTool(name, args, acc, req) {
   }
   if (name === "kiln_compute") {
     if (!acc) return { ok: false, error: "sign in" };
+    if (args.action === "claim") return claimWork({ id: args.id, seat: acc.handle });
+    if (args.action === "submit") return submitWork({ id: args.id, seat: acc.handle, digest: args.digest });
     return postWork({
       seat: acc.handle,
       kind: args.kind || "sha256-chain",
@@ -585,7 +590,7 @@ async function runStudioTool(name, args, acc, req) {
       n: args.n,
       leaves: args.leaves,
       bounty: args.bounty,
-    });
+    }, { remote: args.action === "remote" || args.remote === true });
   }
   if (name === "kiln_wallet" || name === "kiln_products" || name === "kiln_list_product" || name === "kiln_buy" || name === "kiln_pay" || name === "kiln_repos" || name === "kiln_receipt" || name === "kiln_ship" || name === "kiln_sit" || name === "kiln_recall") {
     return runMarketTool(name, args, acc, req);
