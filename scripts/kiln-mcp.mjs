@@ -6,6 +6,7 @@ import { handleMcp } from "./agent-turn.mjs";
 import { bearerFrom, loadUserRepos, ownsRepo, sessionAccount } from "./kiln-accounts.mjs";
 import { advanceBench, holdBench, openBench, readBench } from "./kiln-bench.mjs";
 import { offerGpu } from "./kiln-gpu.mjs";
+import { claimWork, postWork, submitWork } from "./kiln-compute.mjs";
 import { handleLoop } from "./kiln-loop.mjs";
 import { listSpace, spaceHome } from "./kiln-space.mjs";
 
@@ -205,6 +206,24 @@ const BENCH_TOOLS = [
         branch: { type: "string" },
       },
       required: ["repo", "github"],
+    },
+  },
+  {
+    name: "kiln_compute",
+    description: "Run real work. Short work runs on this kiln's cores. Long work, or action remote, stays open until a second seat claims it and a third seat returns the same digest. The kiln note then pays the claimer. A mismatch or an expired claim returns the note to the poster. action is post, claim, or submit. Not a card. Not a miner on a chain this kiln does not run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "post, claim, or submit" },
+        id: { type: "string" },
+        digest: { type: "string" },
+        kind: { type: "string" },
+        seed: { type: "string" },
+        rounds: { type: "integer" },
+        n: { type: "integer" },
+        leaves: { type: "array", items: { type: "string" } },
+        bounty: { type: "integer" },
+      },
     },
   },
   {
@@ -558,6 +577,20 @@ async function runStudioTool(name, args, acc, req) {
       question: args.question || args.q || "",
       repo: args.repo || args.repoId || "",
     });
+  }
+  if (name === "kiln_compute") {
+    if (!acc) return { ok: false, error: "sign in" };
+    if (args.action === "claim") return claimWork({ id: args.id, seat: acc.handle });
+    if (args.action === "submit") return submitWork({ id: args.id, seat: acc.handle, digest: args.digest });
+    return postWork({
+      seat: acc.handle,
+      kind: args.kind || "sha256-chain",
+      seed: args.seed,
+      rounds: args.rounds,
+      n: args.n,
+      leaves: args.leaves,
+      bounty: args.bounty,
+    }, { remote: args.action === "remote" || args.remote === true });
   }
   if (name === "kiln_wallet" || name === "kiln_products" || name === "kiln_list_product" || name === "kiln_buy" || name === "kiln_pay" || name === "kiln_repos" || name === "kiln_receipt" || name === "kiln_ship" || name === "kiln_sit" || name === "kiln_recall") {
     return runMarketTool(name, args, acc, req);

@@ -578,11 +578,75 @@ function start() {
   // forge boot.
   import("./kiln-identity.js").then((m) => { try { m.armIdentity(); } catch {} }).catch(() => {});
   const run = () => { wrapImportGithub(); bootKilnAccount(); };
-  if (persist?.hasHydrated?.()) run();
-  else if (persist?.onFinishHydration) persist.onFinishHydration(run);
-  else setTimeout(run, 50);
-  if (persist?.onFinishHydration) persist.onFinishHydration(run);
-  setTimeout(run, 400);
+  // A saved wallet is not the session. After hydration, if this browser
+  // holds a kiln-session, the header chip stays on that handle. Kiln
+  // origin is not a seat, and a second saved wallet does not replace it.
+  let pinning = false;
+  let seatFetch = "";
+  const holdSeat = async () => {
+    if (pinning) return;
+    let token = "";
+    try { token = sessionStorage.getItem("kiln-session") || ""; } catch { token = ""; }
+    const w = store.getState().wallet;
+    const known = globalThis.__KILN_ACCOUNT;
+    if (!token) {
+      if (w?.handle === "kiln" && typeof store.getState().disconnect === "function") {
+        pinning = true;
+        try { store.getState().disconnect(); } finally { pinning = false; }
+      }
+      return;
+    }
+    if (known?.handle && known.handle !== "kiln") {
+      if (w?.handle === known.handle) return;
+      pinning = true;
+      try {
+        store.setState({
+          wallet: {
+            handle: known.handle,
+            address: known.address || "",
+            createdAt: known.createdAt || new Date().toISOString(),
+          },
+        });
+      } finally {
+        pinning = false;
+      }
+      return;
+    }
+    if (seatFetch === token) return;
+    seatFetch = token;
+    let me = null;
+    try {
+      me = await fetch("/api/kiln/account", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + token },
+        body: JSON.stringify({ action: "me", token }),
+      }).then((r) => r.json());
+    } catch {
+      seatFetch = "";
+      return;
+    }
+    const handle = me && me.ok && me.account && me.account.handle;
+    if (!handle || handle === "kiln") return;
+    globalThis.__KILN_ACCOUNT = me.account;
+    if (store.getState().wallet?.handle === handle) return;
+    pinning = true;
+    try {
+      store.setState({
+        wallet: {
+          handle,
+          address: me.account.address || "",
+          createdAt: me.account.createdAt || new Date().toISOString(),
+        },
+      });
+    } finally {
+      pinning = false;
+    }
+  };
+  try { store.subscribe(() => { void holdSeat(); }); } catch { /* store later */ }
+  const boot = () => { run(); void holdSeat(); };
+  if (persist?.hasHydrated?.()) boot();
+  if (persist?.onFinishHydration) persist.onFinishHydration(boot);
+  setTimeout(boot, 400);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") bootKilnAccount(); });
 }
 

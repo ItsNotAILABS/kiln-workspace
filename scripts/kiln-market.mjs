@@ -287,6 +287,55 @@ export function unlistProduct({ seller, productId } = {}, opts = {}) {
   return { ok: true, rail: RAIL, not: NOT_A_BANK, product: pub(product) };
 }
 
+function boxName(box) {
+  const name = String(box || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, 48);
+  if (!name.startsWith("box-") || name.length < 6) return "";
+  return name;
+}
+
+export function lockNote({ from, box, cents, memo } = {}, opts = {}) {
+  const payer = norm(from);
+  const hold = boxName(box);
+  const price = centsOf(cents);
+  if (!payer || payer === "kiln") return fail("not a seat");
+  if (!hold) return fail("bad box");
+  if (price == null || price < 1 || price > MAX_PRICE) return fail("amount is integer cents, from 1 to 1000000");
+  const book = load(opts);
+  if (balance(book, payer) < price) return fail("till is short");
+  const entry = pushEntry(book, {
+    debit: payer,
+    credit: hold,
+    cents: price,
+    memo: memo || "compute lock",
+    kind: "lock",
+  });
+  save(book, opts);
+  return { ok: true, rail: RAIL, not: NOT_A_BANK, entry: entry.id, box: hold, cents: price, from: viewOf(book, payer).cents };
+}
+
+export function releaseNote({ box, to, cents, memo } = {}, opts = {}) {
+  const hold = boxName(box);
+  const payee = norm(to);
+  const price = centsOf(cents);
+  if (!hold) return fail("bad box");
+  if (!payee || payee === "kiln") return fail("not a seat");
+  if (price == null || price < 1 || price > MAX_PRICE) return fail("amount is integer cents, from 1 to 1000000");
+  const book = load(opts);
+  if (balance(book, hold) < price) return fail("box is short");
+  const entry = pushEntry(book, {
+    debit: hold,
+    credit: payee,
+    cents: price,
+    memo: memo || "compute release",
+    kind: "release",
+  });
+  save(book, opts);
+  return { ok: true, rail: RAIL, not: NOT_A_BANK, entry: entry.id, box: hold, cents: price, to: viewOf(book, payee).cents };
+}
+
 export function transferNote({ from, to, cents, memo } = {}, opts = {}) {
   const payer = norm(from);
   const payee = norm(to);
