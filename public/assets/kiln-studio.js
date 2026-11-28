@@ -126,10 +126,10 @@ function ensureHomeStub(handle) {
 function hydrateWalletNow() {
   const peeked = peekPersist();
   const wallet = peeked && peeked.wallet;
-  if (!wallet || !wallet.handle || wallet.handle === "kiln") return wallet || null;
+  if (!wallet || !wallet.handle || wallet.handle === "kiln") return null;
   const cur = useKiln.getState().wallet;
   if (!cur || !cur.handle) {
-    const patch = { wallet, hydrated: true };
+    const patch = { hydrated: true };
     if (Array.isArray(peeked.userRepos) && peeked.userRepos.length && !(useKiln.getState().userRepos || []).length) {
       patch.userRepos = peeked.userRepos;
     }
@@ -137,10 +137,9 @@ function hydrateWalletNow() {
       patch.agents = peeked.agents;
       if (Array.isArray(peeked.crews)) patch.crews = peeked.crews;
     }
-    useKiln.setState(patch);
+    if (patch.userRepos || patch.agents) useKiln.setState(patch);
   }
-  ensureHomeStub(wallet.handle);
-  return wallet;
+  return null;
 }
 
 async function accountMe() {
