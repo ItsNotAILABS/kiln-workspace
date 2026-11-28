@@ -6,6 +6,7 @@ import { handleMcp } from "./agent-turn.mjs";
 import { bearerFrom, loadUserRepos, ownsRepo, sessionAccount } from "./kiln-accounts.mjs";
 import { advanceBench, holdBench, openBench, readBench } from "./kiln-bench.mjs";
 import { offerGpu } from "./kiln-gpu.mjs";
+import { postWork } from "./kiln-compute.mjs";
 import { handleLoop } from "./kiln-loop.mjs";
 import { listSpace, spaceHome } from "./kiln-space.mjs";
 
@@ -205,6 +206,21 @@ const BENCH_TOOLS = [
         branch: { type: "string" },
       },
       required: ["repo", "github"],
+    },
+  },
+  {
+    name: "kiln_compute",
+    description: "Run real work on this kiln's cores. kind is sha256-chain (rounds 1 to 250000), merkle (leaves), or reduce (n, seed). bounty is optional kiln-note cents locked up front. A failed job returns the note. A finished job keeps it as the core fee. Not a card. Not a miner on a chain this kiln does not run. Print digest.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string" },
+        seed: { type: "string" },
+        rounds: { type: "integer" },
+        n: { type: "integer" },
+        leaves: { type: "array", items: { type: "string" } },
+        bounty: { type: "integer" },
+      },
     },
   },
   {
@@ -557,6 +573,18 @@ async function runStudioTool(name, args, acc, req) {
       path: args.path || args.url || "",
       question: args.question || args.q || "",
       repo: args.repo || args.repoId || "",
+    });
+  }
+  if (name === "kiln_compute") {
+    if (!acc) return { ok: false, error: "sign in" };
+    return postWork({
+      seat: acc.handle,
+      kind: args.kind || "sha256-chain",
+      seed: args.seed,
+      rounds: args.rounds,
+      n: args.n,
+      leaves: args.leaves,
+      bounty: args.bounty,
     });
   }
   if (name === "kiln_wallet" || name === "kiln_products" || name === "kiln_list_product" || name === "kiln_buy" || name === "kiln_pay" || name === "kiln_repos" || name === "kiln_receipt" || name === "kiln_ship" || name === "kiln_sit" || name === "kiln_recall") {

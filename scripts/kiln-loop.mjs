@@ -33,6 +33,7 @@ import { readOutside, readCrew, runIngestTool, phoneCard, publicForge } from "./
 import { listSpace, recallMemory } from "./kiln-space.mjs";
 import { sitComputer } from "./kiln-sit.mjs";
 import { boardGpu, claimGpu, offerGpu, receiptGpu } from "./kiln-gpu.mjs";
+import { boardCompute, postWork } from "./kiln-compute.mjs";
 import { buyProduct, catalog, claimOpening, listProduct, tillView, transferNote, unlistProduct } from "./kiln-market.mjs";
 import { loadWallet, signLedger } from "./kiln-wallet.mjs";
 import { noteChecks, receiptOf, repoBoard } from "./kiln-board.mjs";
@@ -635,6 +636,21 @@ export async function handleLoop(pathname, req) {
   }
   if (action === "gpuClaim") return json(200, claimGpu({ id: data.id, node: data.node || data.from }));
   if (action === "gpuReceipt") return json(200, receiptGpu({ id: data.id, receipt: data.receipt || {} }));
+
+  if (action === "compute" || action === "computeBoard") return json(200, boardCompute());
+  if (action === "computePost") {
+    if (!acc) return json(401, { ok: false, error: "sign in" });
+    const out = await postWork({
+      seat: acc.handle,
+      kind: data.kind || "sha256-chain",
+      seed: data.seed,
+      rounds: data.rounds,
+      n: data.n,
+      leaves: data.leaves,
+      bounty: data.bounty,
+    });
+    return json(out.ok ? 200 : 400, out);
+  }
 
   if (action === "board") {
     if (!acc) return json(401, { ok: false, error: "sign in" });
