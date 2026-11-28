@@ -7,6 +7,7 @@ import { kilnPublicRepos } from "./kiln-accounts.mjs";
 import { repoBoard } from "./kiln-board.mjs";
 import { boardGpu } from "./kiln-gpu.mjs";
 import { tillView } from "./kiln-market.mjs";
+import { peopleBoard } from "./kiln-people.mjs";
 import { listSpace } from "./kiln-space.mjs";
 import { sitComputer } from "./kiln-sit.mjs";
 
@@ -29,6 +30,7 @@ const PAGES = [
   { id: "gpu", path: "/gpu", title: "GPU", needsSeat: false, does: "The compute plane. Offer, claim, receipt." },
   { id: "wallet", path: "/wallet", title: "Wallet", needsSeat: true, does: "Kiln-note till. Not a card." },
   { id: "marketplace", path: "/marketplace", title: "Marketplace", needsSeat: false, does: "Files other seats are selling." },
+  { id: "people", path: "/people", title: "People", needsSeat: false, does: "Ask a person or an agent. Show what you do. Bring someone. Read the proof. Turn on the autopilot." },
   { id: "account", path: "/account", title: "Account", needsSeat: true, does: "This seat." },
   { id: "new", path: "/new", title: "New computer", needsSeat: true, does: "Open another computer on this seat." },
   { id: "search", path: "/search", title: "Search", needsSeat: false, does: "Find a public computer." },
@@ -139,6 +141,8 @@ export function openPage({ path, origin, handle } = {}) {
       sit: sitComputer(home).text,
       repos: repoBoard(handle).text || "",
     };
+  } else if (found.page.id === "people") {
+    data = peopleBoard();
   } else if (found.page.id === "wallet" || found.page.id === "marketplace") {
     data = found.page.id === "wallet" ? { till: tillView(handle) } : { sell: "POST /api/kiln/loop { action: 'products' }" };
   } else if (found.repoId) {

@@ -10,6 +10,7 @@ import { installGWebGpu } from "./gwebgpu-plane.js";
 import { installKilnNav } from "./kiln-nav.js";
 import { installKilnPhone } from "./kiln-phone.js";
 import { installKilnMarket } from "./kiln-market.js";
+import { installKilnPeople } from "./kiln-people.js";
 
 (function slimOriginCatalog() {
   if (globalThis.__KILN_SLIM_ORIGIN) return;
@@ -485,6 +486,11 @@ export function installKilnSeat() {
     installKilnMarket();
   } catch {
     /* the shelf is best-effort */
+  }
+  try {
+    installKilnPeople();
+  } catch {
+    /* people layer is best-effort */
   }
   try {
     installKilnStudio();

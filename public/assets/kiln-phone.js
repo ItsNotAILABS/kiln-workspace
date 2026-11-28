@@ -68,7 +68,7 @@ html.kiln-phone body { min-height: 100dvh; padding-bottom: calc(58px + env(safe-
 #kiln-tabbar { display: none; }
 html.kiln-phone #kiln-tabbar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 520;
@@ -76,7 +76,7 @@ html.kiln-phone #kiln-tabbar {
   padding: 0 8px env(safe-area-inset-bottom);
   background: #09090b;
   border-top: 1px solid #27272a;
-  font: 500 13px/1 IBM Plex Sans, system-ui, sans-serif;
+  font: 500 12px/1 IBM Plex Sans, system-ui, sans-serif;
 }
 #kiln-tabbar a, #kiln-tabbar button {
   appearance: none;
@@ -232,7 +232,7 @@ export function installKilnPhone() {
     const bar = document.createElement("nav");
     bar.id = "kiln-tabbar";
     bar.setAttribute("aria-label", "Kiln");
-    bar.innerHTML = `<a href="/" data-kiln-go="home">Home</a><a href="/studio" data-kiln-go="studio">Studio</a><a href="/marketplace" data-kiln-go="marketplace">Market</a><button type="button" data-kiln-go="account" data-open>Account</button>`;
+    bar.innerHTML = `<a href="/" data-kiln-go="home">Home</a><a href="/studio" data-kiln-go="studio">Studio</a><a href="/people" data-kiln-go="people">People</a><a href="/marketplace" data-kiln-go="marketplace">Market</a><button type="button" data-kiln-go="account" data-open>Account</button>`;
     document.body.appendChild(bar);
   }
   if (!document.getElementById("kiln-you-open")) {

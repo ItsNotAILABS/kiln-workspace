@@ -209,6 +209,22 @@ const BENCH_TOOLS = [
     },
   },
   {
+    name: "kiln_people",
+    description: "People doors and the autopilot. action is board, ask, take, answer, accept, return, show, bring, join, proof, autopilot, or tick. The same call a person uses on /people. An ask can lock a kiln note. Tick does one real step: witness compute, claim short work, or read an open ask. Not a bank.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string" },
+        id: { type: "string" },
+        text: { type: "string" },
+        cents: { type: "integer" },
+        line: { type: "string" },
+        code: { type: "string" },
+        on: { type: "boolean" },
+      },
+    },
+  },
+  {
     name: "kiln_compute",
     description: "Run real work. Short work runs on this kiln's cores. Long work, or action remote, stays open until a second seat claims it and a third seat returns the same digest. The kiln note then pays the claimer. A mismatch or an expired claim returns the note to the poster. action is post, claim, or submit. Not a card. Not a miner on a chain this kiln does not run.",
     inputSchema: {
@@ -576,6 +592,35 @@ async function runStudioTool(name, args, acc, req) {
       path: args.path || args.url || "",
       question: args.question || args.q || "",
       repo: args.repo || args.repoId || "",
+    });
+  }
+  if (name === "kiln_people") {
+    const action = String(args.action || "board");
+    const map = {
+      board: "people",
+      people: "people",
+      ask: "ask",
+      take: "askTake",
+      answer: "askAnswer",
+      accept: "askAccept",
+      return: "askReturn",
+      show: "show",
+      bring: "bring",
+      join: "bringAccept",
+      proof: "proof",
+      autopilot: "autopilot",
+      tick: "autopilotTick",
+    };
+    const loopAction = map[action];
+    if (!loopAction) return { ok: false, error: "unknown people action" };
+    if (loopAction !== "people" && loopAction !== "proof" && !acc) return { ok: false, error: "sign in" };
+    return loopCall(req, loopAction, {
+      id: args.id || "",
+      text: args.text || args.question || "",
+      cents: args.cents,
+      line: args.line || "",
+      code: args.code || "",
+      on: args.on,
     });
   }
   if (name === "kiln_compute") {
